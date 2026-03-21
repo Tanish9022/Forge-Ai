@@ -5,13 +5,13 @@ class Settings(BaseSettings):
     """Configuration settings for the SDLC agent system."""
     
     # API Keys
-    GOOGLE_API_KEY: str
+    GOOGLE_API_KEY: Optional[str] = None
     
     # GitLab Configuration
     GITLAB_URL: str = "https://gitlab.com"
-    GITLAB_TOKEN: str
-    GITLAB_PROJECT_ID: int
-    GITLAB_WEBHOOK_SECRET: str
+    GITLAB_TOKEN: Optional[str] = None
+    GITLAB_PROJECT_ID: Optional[int] = None
+    GITLAB_WEBHOOK_SECRET: Optional[str] = None
     
     # Redis Configuration
     REDIS_URL: str = "redis://localhost:6379/0"
