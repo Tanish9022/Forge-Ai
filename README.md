@@ -5,11 +5,12 @@ A production-ready, multi-agent SDLC automation system powered by **Google Gemin
 ## 🚀 Features
 
 - **PMAgent**: Transforms GitLab issues into structured requirements (`docs/requirements.md`).
-- **ArchitectAgent**: Generates PlantUML architecture diagrams from requirements.
-- **DeveloperAgent**: Implements application code and opens Merge Requests.
-- **ReviewAgent**: Performs automated architectural and code quality reviews.
+- **ArchitectAgent**: Generates high-level architecture designs from requirements.
+- **UMLAgent**: Generates specific PlantUML diagrams (Sequence, Component, and Architecture diagrams).
+- **DeveloperAgent**: Implements application code based on designs and opens Merge Requests.
+- **ReviewAgent**: Performs automated architectural and code quality reviews on Merge Requests.
 - **TestAgent**: Generates pytest suites and configures CI/CD test stages.
-- **SecurityAgent**: Scans for vulnerabilities and generates security reports.
+- **SecurityAgent**: Scans for vulnerabilities, generates reports, and ensures security compliance.
 - **DevOpsAgent**: Configures Docker, finalizes `.gitlab-ci.yml`, and monitors pipelines.
 
 ## 🛠️ Prerequisites
@@ -43,6 +44,7 @@ A production-ready, multi-agent SDLC automation system powered by **Google Gemin
    - `GITLAB_TOKEN`: Personal Access Token with `api` scope.
    - `GITLAB_PROJECT_ID`: The ID of your GitLab project.
    - `GITLAB_WEBHOOK_SECRET`: A random string for securing your webhook.
+   - `REDIS_URL`: (Optional) Custom Redis connection string.
 
 ## 🚦 Running the System
 
@@ -52,7 +54,6 @@ A production-ready, multi-agent SDLC automation system powered by **Google Gemin
 2. **Start the FastAPI Server:**
    ```bash
    uvicorn main:app --reload --host 0.0.0.0 --port 8000
-   
    ```
 
 3. **Expose to the Internet (for Webhooks):**
@@ -71,11 +72,17 @@ A production-ready, multi-agent SDLC automation system powered by **Google Gemin
 
 1. **Trigger**: Create a new Issue in GitLab.
 2. **Requirements**: `PMAgent` creates a feature branch and `docs/requirements.md`.
-3. **Architecture**: Once requirements are pushed, `ArchitectAgent` generates PUML diagrams.
-4. **Implementation**: `DeveloperAgent` generates the code and opens a Merge Request.
-5. **Review**: `ReviewAgent` comments on the MR.
-6. **Testing & Security**: Once the MR is commented with "APPROVED", `TestAgent` and `SecurityAgent` run in parallel.
-7. **Deployment**: `DevOpsAgent` triggers the final CI/CD pipeline.
+3. **Architecture**: `ArchitectAgent` generates high-level designs.
+4. **UML Diagrams**: `UMLAgent` generates detailed PlantUML diagrams (`.puml`).
+5. **Implementation**: `DeveloperAgent` generates the code and opens a Merge Request.
+6. **Review**: `ReviewAgent` comments on the MR with code quality feedback.
+7. **Testing & Security**: Once the MR is commented with "APPROVED", `TestAgent` and `SecurityAgent` run in parallel.
+8. **Deployment**: `DevOpsAgent` triggers the final CI/CD pipeline and monitors for success.
+
+## 📡 Health & Monitoring
+
+The system includes a health check endpoint:
+- **Health Check**: `GET /health` - Returns uptime, version, and connection status for Redis and GitLab.
 
 ## 🧪 Testing
 

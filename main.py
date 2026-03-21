@@ -6,6 +6,10 @@ from webhooks.router import router as webhook_router
 from tools.gitlab_tools import GitLabTools
 from orchestrator.state import state_manager
 from config import settings
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Setup structured logging
 structlog.configure(
@@ -39,7 +43,7 @@ async def lifespan(app: FastAPI):
         logger.warning("gitlab_init_error", error=str(e))
         
     # Log active agents
-    agents = ["PMAgent", "ArchitectAgent", "DeveloperAgent", "ReviewAgent", "TestAgent", "SecurityAgent", "DevOpsAgent"]
+    agents = ["PMAgent", "ArchitectAgent", "UMLAgent", "DeveloperAgent", "ReviewAgent", "TestAgent", "SecurityAgent", "DevOpsAgent"]
     logger.info("agents_ready", active_agents=agents)
     
     yield
@@ -47,20 +51,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="GitLab SDLC Agents", lifespan=lifespan)
 
-app.include_router(webhook_router)
-
+# Health endpoint
 @app.get("/health")
-async def health_check():
+def health():
     """Returns application health status."""
-    uptime = time.time() - start_time
-    return {
-        "status": "healthy",
-        "uptime": f"{uptime:.2f}s",
-        "version": "0.1.0",
-        "environment": settings.ENVIRONMENT,
-        "state_manager": state_manager.__class__.__name__
-    }
+    return {"status": "healthy"}
+
+app.include_router(webhook_router)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import os
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
