@@ -1,10 +1,13 @@
 import time
+import hmac
 import structlog
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from webhooks.router import router as webhook_router
+from fastapi import FastAPI, Request, BackgroundTasks, Header, HTTPException
 from tools.gitlab_tools import GitLabTools
+from tools.llm_tools import LLMClient
+from orchestrator.orchestrator import Orchestrator
 from orchestrator.state import state_manager
+from webhooks import parser
 from config import settings
 from dotenv import load_dotenv
 
@@ -19,7 +22,10 @@ structlog.configure(
 )
 logger = structlog.get_logger()
 
-start_time = time.time()
+# Global instances for reuse
+gitlab_tools = GitLabTools()
+llm_client = LLMClient()
+orchestrator = Orchestrator(gitlab_tools, llm_client, state_manager)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -33,7 +39,6 @@ async def lifespan(app: FastAPI):
         logger.info("state_manager_connected")
         
     # Verify GitLab (Optional at startup to prevent crash)
-    gitlab_tools = GitLabTools()
     try:
         if not gitlab_tools.ping():
             logger.warning("gitlab_connection_failed_check_creds")
@@ -49,15 +54,72 @@ async def lifespan(app: FastAPI):
     yield
     logger.info("shutdown")
 
-app = FastAPI(title="GitLab SDLC Agents", lifespan=lifespan)
+app = FastAPI(title="ForgeAI - GitLab SDLC Agents", lifespan=lifespan)
 
-# Health endpoint
 @app.get("/health")
 def health():
     """Returns application health status."""
     return {"status": "healthy"}
 
-app.include_router(webhook_router)
+@app.post("/webhook")
+async def webhook(
+    request: Request, 
+    background_tasks: BackgroundTasks,
+    x_gitlab_token: str = Header(None),
+    x_gitlab_event: str = Header(None)
+):
+    """
+    Main webhook entry point.
+    Immediately returns 202 Accepted and processes the pipeline in the background.
+    """
+    # Security check
+    if not x_gitlab_token or not hmac.compare_digest(x_gitlab_token, settings.GITLAB_WEBHOOK_SECRET):
+        logger.warning("webhook_auth_failed")
+        raise HTTPException(status_code=401, detail="Invalid webhook token")
+
+    payload = await request.json()
+    logger.info("webhook_received", event=x_gitlab_event)
+
+    # Process in background to prevent GitLab timeout
+    background_tasks.add_task(process_pipeline, payload, x_gitlab_event)
+
+    return {"status": "accepted", "message": "Pipeline processing started"}
+
+async def process_pipeline(payload: dict, event_header: str):
+    """
+    Background task to process the GitLab event through the agents pipeline.
+    """
+    try:
+        logger.info("pipeline_started", event=event_header)
+        
+        parsed_payload = None
+        event_type = None
+
+        if event_header == "Issue Hook":
+            parsed_payload = parser.parse_issue_event(payload)
+            event_type = "issue"
+        elif event_header == "Push Hook":
+            parsed_payload = parser.parse_push_event(payload)
+            event_type = "push"
+        elif event_header == "Merge Request Hook":
+            parsed_payload = parser.parse_mr_event(payload)
+            event_type = "merge_request"
+        elif event_header == "Note Hook":
+            parsed_payload = parser.parse_note_event(payload)
+            event_type = "note"
+        else:
+            logger.info("unhandled_event_type", event_header=event_header)
+            return
+
+        if parsed_payload:
+            await orchestrator.handle_event(event_type, parsed_payload)
+            logger.info("pipeline_completed_successfully", event_type=event_type)
+        else:
+            logger.warning("payload_parsing_failed", event_header=event_header)
+
+    except Exception as e:
+        logger.error("pipeline_execution_error", error=str(e), event=event_header)
+        # We don't re-raise here as it's a background task and we want to prevent server crash
 
 if __name__ == "__main__":
     import uvicorn

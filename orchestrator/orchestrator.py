@@ -104,46 +104,54 @@ class Orchestrator:
                 })
                 
                 # PM Agent -> REQUIREMENTS_READY
-                print("[Pipeline] Starting PMAgent")
+                logger.info("agent_start", agent="PMAgent", issue_iid=issue_iid)
                 await self._run_agent(self.pm_agent, context, PipelineState.ISSUE_CREATED, PipelineState.REQUIREMENTS_READY)
                 context.update(self.state_manager.get_context(project_id, issue_iid))
+                logger.info("agent_end", agent="PMAgent", issue_iid=issue_iid)
                 
                 # Automatically continue the pipeline
                 logger.info("pipeline_automatic_continuation", issue_iid=issue_iid)
                 
                 # Architect Agent -> ARCHITECTURE_READY
-                print("[Pipeline] Starting ArchitectAgent")
+                logger.info("agent_start", agent="ArchitectAgent", issue_iid=issue_iid)
                 await self._run_agent(self.architect_agent, context, PipelineState.REQUIREMENTS_READY, PipelineState.ARCHITECTURE_READY)
                 context.update(self.state_manager.get_context(project_id, issue_iid))
+                logger.info("agent_end", agent="ArchitectAgent", issue_iid=issue_iid)
                 
                 # UML Agent -> UML_READY
-                print("[Pipeline] Starting UMLAgent")
+                logger.info("agent_start", agent="UMLAgent", issue_iid=issue_iid)
                 await self._run_agent(self.uml_agent, context, PipelineState.ARCHITECTURE_READY, PipelineState.UML_READY)
                 context.update(self.state_manager.get_context(project_id, issue_iid))
+                logger.info("agent_end", agent="UMLAgent", issue_iid=issue_iid)
                 
                 # Developer Agent -> CODE_READY
-                print("[Pipeline] Starting DeveloperAgent")
+                logger.info("agent_start", agent="DeveloperAgent", issue_iid=issue_iid)
                 await self._run_agent(self.developer_agent, context, PipelineState.UML_READY, PipelineState.CODE_READY)
                 context.update(self.state_manager.get_context(project_id, issue_iid))
+                logger.info("agent_end", agent="DeveloperAgent", issue_iid=issue_iid)
                 
                 # Review Agent -> REVIEW_APPROVED
-                print("[Pipeline] Starting ReviewAgent")
+                logger.info("agent_start", agent="ReviewAgent", issue_iid=issue_iid)
                 await self._run_agent(self.review_agent, context, PipelineState.CODE_READY, PipelineState.REVIEW_APPROVED)
                 context.update(self.state_manager.get_context(project_id, issue_iid))
+                logger.info("agent_end", agent="ReviewAgent", issue_iid=issue_iid)
                 
                 # Test Agent -> TESTS_READY
-                print("[Pipeline] Starting TestAgent")
+                logger.info("agent_start", agent="TestAgent", issue_iid=issue_iid)
                 await self._run_agent(self.test_agent, context, PipelineState.REVIEW_APPROVED, PipelineState.TESTS_READY)
                 context.update(self.state_manager.get_context(project_id, issue_iid))
+                logger.info("agent_end", agent="TestAgent", issue_iid=issue_iid)
                 
                 # Security Agent -> SECURITY_READY
-                print("[Pipeline] Starting SecurityAgent")
+                logger.info("agent_start", agent="SecurityAgent", issue_iid=issue_iid)
                 await self._run_agent(self.security_agent, context, PipelineState.TESTS_READY, PipelineState.SECURITY_READY)
                 context.update(self.state_manager.get_context(project_id, issue_iid))
+                logger.info("agent_end", agent="SecurityAgent", issue_iid=issue_iid)
                 
                 # DevOps Agent -> DONE
-                print("[Pipeline] Starting DevOpsAgent")
+                logger.info("agent_start", agent="DevOpsAgent", issue_iid=issue_iid)
                 await self._run_agent(self.devops_agent, context, PipelineState.SECURITY_READY, PipelineState.DONE)
+                logger.info("agent_end", agent="DevOpsAgent", issue_iid=issue_iid)
                 
             elif event_type == "push" and "docs/requirements.md" in payload.get("added_files", []) + payload.get("modified_files", []):
                 await self._run_agent(self.architect_agent, context, PipelineState.REQUIREMENTS_READY, PipelineState.ARCHITECTURE_READY)
