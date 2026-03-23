@@ -15,9 +15,9 @@ def parse_push_event(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Parses a GitLab push event."""
     return {
         "event_type": "push",
-        "project_id": payload.get("project_id"),
+        "project_id": payload.get("project", {}).get("id") or payload.get("project_id"),
         "ref": payload.get("ref"),
-        "branch": payload.get("ref", "").split("/")[-1],
+        "branch": payload.get("ref", "").split("/")[-1] if payload.get("ref") else None,
         "commits": payload.get("commits", []),
         "added_files": [f for commit in payload.get("commits", []) for f in commit.get("added", [])],
         "modified_files": [f for commit in payload.get("commits", []) for f in commit.get("modified", [])]
@@ -38,12 +38,13 @@ def parse_mr_event(payload: Dict[str, Any]) -> Dict[str, Any]:
 def parse_note_event(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Parses a GitLab note (comment) event."""
     # Could be on an issue or an MR
-    noteable_type = payload.get("object_attributes", {}).get("noteable_type")
+    object_attributes = payload.get("object_attributes", {})
+    noteable_type = object_attributes.get("noteable_type")
     
     data = {
         "event_type": "note",
         "project_id": payload.get("project", {}).get("id"),
-        "note": payload.get("object_attributes", {}).get("note"),
+        "note": object_attributes.get("note"),
         "noteable_type": noteable_type
     }
     

@@ -71,23 +71,37 @@ async def webhook(
     """
     Main webhook entry point.
     Immediately returns 202 Accepted and processes the pipeline in the background.
+    Never fails with 500 to keep GitLab webhook enabled.
     """
-    # Security check
-    if not x_gitlab_token or not hmac.compare_digest(x_gitlab_token, settings.GITLAB_WEBHOOK_SECRET):
-        logger.warning("webhook_auth_failed")
-        raise HTTPException(status_code=401, detail="Invalid webhook token")
+    try:
+        # Security check
+        if not x_gitlab_token or not hmac.compare_digest(x_gitlab_token, settings.GITLAB_WEBHOOK_SECRET):
+            logger.warning("webhook_auth_failed")
+            # We return 202 even on auth failure to prevent GitLab from disabling the webhook
+            # but we don't process the task.
+            return {"status": "ignored", "reason": "unauthorized"}
 
-    payload = await request.json()
-    logger.info("webhook_received", event=x_gitlab_event)
+        try:
+            payload = await request.json()
+        except Exception as e:
+            logger.error("webhook_json_decode_error", error=str(e))
+            return {"status": "error", "message": "Invalid JSON"}
 
-    # Process in background to prevent GitLab timeout
-    background_tasks.add_task(process_pipeline, payload, x_gitlab_event)
+        logger.info("webhook_received", event=x_gitlab_event)
 
-    return {"status": "accepted", "message": "Pipeline processing started"}
+        # Process in background to prevent GitLab timeout
+        background_tasks.add_task(process_pipeline, payload, x_gitlab_event)
+
+        return {"status": "accepted", "message": "Pipeline processing started"}
+    
+    except Exception as e:
+        logger.error("webhook_top_level_error", error=str(e))
+        return {"status": "error", "message": "Internal error handled"}
 
 async def process_pipeline(payload: dict, event_header: str):
     """
     Background task to process the GitLab event through the agents pipeline.
+    Safe execution wrapper.
     """
     try:
         logger.info("pipeline_started", event=event_header)
@@ -119,7 +133,7 @@ async def process_pipeline(payload: dict, event_header: str):
 
     except Exception as e:
         logger.error("pipeline_execution_error", error=str(e), event=event_header)
-        # We don't re-raise here as it's a background task and we want to prevent server crash
+        # Never raise here to avoid crashing the server
 
 if __name__ == "__main__":
     import uvicorn
