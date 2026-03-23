@@ -1,5 +1,6 @@
-import asyncio
+import time
 import structlog
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Optional
 from orchestrator.state import StateManagerInterface, PipelineState
 from tools.gitlab_tools import GitLabTools
@@ -59,7 +60,7 @@ class Orchestrator:
                     logger.error("branch_creation_failed", branch=branch_name, error=str(e))
                     raise e
 
-    async def handle_event(self, event_type: str, payload: Dict[str, Any]) -> None:
+    def handle_event(self, event_type: str, payload: Dict[str, Any]) -> None:
         """Processes incoming GitLab events and routes to agents."""
         project_id = payload.get("project_id")
         issue_iid = payload.get("issue_iid")
@@ -73,8 +74,6 @@ class Orchestrator:
                     issue_iid = int(payload["branch"].split("-")[-1])
             elif mr_iid:
                 # We should have the issue_iid in the context of this MR
-                # For now, let's assume we can get it from MR title or description if needed, 
-                # but better to store it in state
                 pass
                 
         if not issue_iid:
@@ -105,7 +104,7 @@ class Orchestrator:
                 
                 # PM Agent -> REQUIREMENTS_READY
                 logger.info("agent_start", agent="PMAgent", issue_iid=issue_iid)
-                await self._run_agent(self.pm_agent, context, PipelineState.ISSUE_CREATED, PipelineState.REQUIREMENTS_READY)
+                self._run_agent(self.pm_agent, context, PipelineState.ISSUE_CREATED, PipelineState.REQUIREMENTS_READY)
                 context.update(self.state_manager.get_context(project_id, issue_iid))
                 logger.info("agent_end", agent="PMAgent", issue_iid=issue_iid)
                 
@@ -114,99 +113,97 @@ class Orchestrator:
                 
                 # Architect Agent -> ARCHITECTURE_READY
                 logger.info("agent_start", agent="ArchitectAgent", issue_iid=issue_iid)
-                await self._run_agent(self.architect_agent, context, PipelineState.REQUIREMENTS_READY, PipelineState.ARCHITECTURE_READY)
+                self._run_agent(self.architect_agent, context, PipelineState.REQUIREMENTS_READY, PipelineState.ARCHITECTURE_READY)
                 context.update(self.state_manager.get_context(project_id, issue_iid))
                 logger.info("agent_end", agent="ArchitectAgent", issue_iid=issue_iid)
                 
                 # UML Agent -> UML_READY
                 logger.info("agent_start", agent="UMLAgent", issue_iid=issue_iid)
-                await self._run_agent(self.uml_agent, context, PipelineState.ARCHITECTURE_READY, PipelineState.UML_READY)
+                self._run_agent(self.uml_agent, context, PipelineState.ARCHITECTURE_READY, PipelineState.UML_READY)
                 context.update(self.state_manager.get_context(project_id, issue_iid))
                 logger.info("agent_end", agent="UMLAgent", issue_iid=issue_iid)
                 
                 # Developer Agent -> CODE_READY
                 logger.info("agent_start", agent="DeveloperAgent", issue_iid=issue_iid)
-                await self._run_agent(self.developer_agent, context, PipelineState.UML_READY, PipelineState.CODE_READY)
+                self._run_agent(self.developer_agent, context, PipelineState.UML_READY, PipelineState.CODE_READY)
                 context.update(self.state_manager.get_context(project_id, issue_iid))
                 logger.info("agent_end", agent="DeveloperAgent", issue_iid=issue_iid)
                 
                 # Review Agent -> REVIEW_APPROVED
                 logger.info("agent_start", agent="ReviewAgent", issue_iid=issue_iid)
-                await self._run_agent(self.review_agent, context, PipelineState.CODE_READY, PipelineState.REVIEW_APPROVED)
+                self._run_agent(self.review_agent, context, PipelineState.CODE_READY, PipelineState.REVIEW_APPROVED)
                 context.update(self.state_manager.get_context(project_id, issue_iid))
                 logger.info("agent_end", agent="ReviewAgent", issue_iid=issue_iid)
                 
                 # Test Agent -> TESTS_READY
                 logger.info("agent_start", agent="TestAgent", issue_iid=issue_iid)
-                await self._run_agent(self.test_agent, context, PipelineState.REVIEW_APPROVED, PipelineState.TESTS_READY)
+                self._run_agent(self.test_agent, context, PipelineState.REVIEW_APPROVED, PipelineState.TESTS_READY)
                 context.update(self.state_manager.get_context(project_id, issue_iid))
                 logger.info("agent_end", agent="TestAgent", issue_iid=issue_iid)
                 
                 # Security Agent -> SECURITY_READY
                 logger.info("agent_start", agent="SecurityAgent", issue_iid=issue_iid)
-                await self._run_agent(self.security_agent, context, PipelineState.TESTS_READY, PipelineState.SECURITY_READY)
+                self._run_agent(self.security_agent, context, PipelineState.TESTS_READY, PipelineState.SECURITY_READY)
                 context.update(self.state_manager.get_context(project_id, issue_iid))
                 logger.info("agent_end", agent="SecurityAgent", issue_iid=issue_iid)
                 
                 # DevOps Agent -> DONE
                 logger.info("agent_start", agent="DevOpsAgent", issue_iid=issue_iid)
-                await self._run_agent(self.devops_agent, context, PipelineState.SECURITY_READY, PipelineState.DONE)
+                self._run_agent(self.devops_agent, context, PipelineState.SECURITY_READY, PipelineState.DONE)
                 logger.info("agent_end", agent="DevOpsAgent", issue_iid=issue_iid)
                 
             elif event_type == "push" and "docs/requirements.md" in payload.get("added_files", []) + payload.get("modified_files", []):
-                await self._run_agent(self.architect_agent, context, PipelineState.REQUIREMENTS_READY, PipelineState.ARCHITECTURE_READY)
+                self._run_agent(self.architect_agent, context, PipelineState.REQUIREMENTS_READY, PipelineState.ARCHITECTURE_READY)
                 
             elif event_type == "push" and any(f.endswith("architecture.md") for f in payload.get("added_files", []) + payload.get("modified_files", [])):
-                await self._run_agent(self.uml_agent, context, PipelineState.ARCHITECTURE_READY, PipelineState.UML_READY)
+                self._run_agent(self.uml_agent, context, PipelineState.ARCHITECTURE_READY, PipelineState.UML_READY)
                 
             elif event_type == "push" and any(f.endswith(".puml") for f in payload.get("added_files", []) + payload.get("modified_files", [])):
-                # If we have at least one puml file and state is UML_READY, we can go to CODE_READY
                 if current_state == PipelineState.UML_READY:
-                    await self._run_agent(self.developer_agent, context, PipelineState.UML_READY, PipelineState.CODE_READY)
+                    self._run_agent(self.developer_agent, context, PipelineState.UML_READY, PipelineState.CODE_READY)
                     
             elif event_type == "merge_request" and payload.get("action") == "open":
-                # Check if it was opened by the bot (we can check username if needed)
-                await self._run_agent(self.review_agent, context, PipelineState.CODE_READY, PipelineState.REVIEW_APPROVED)
+                self._run_agent(self.review_agent, context, PipelineState.CODE_READY, PipelineState.REVIEW_APPROVED)
                 
             elif event_type == "note" and "APPROVED" in payload.get("note", "").upper() and payload.get("noteable_type") == "MergeRequest":
-                # Parallel execution of Test and Security agents
                 self.state_manager.set_state(project_id, issue_iid, PipelineState.REVIEW_APPROVED)
                 
-                results = await asyncio.gather(
-                    self.test_agent.run(context),
-                    self.security_agent.run(context),
-                    return_exceptions=True
-                )
-                
-                for res in results:
-                    if isinstance(res, Exception):
-                        raise res
-                    context.update(res)
+                # Parallel execution using ThreadPoolExecutor
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    futures = [
+                        executor.submit(self.test_agent.run, context),
+                        executor.submit(self.security_agent.run, context)
+                    ]
+                    for future in futures:
+                        try:
+                            res = future.result()
+                            context.update(res)
+                        except Exception as e:
+                            raise e
                 
                 self.state_manager.update_context(project_id, issue_iid, context)
                 self.state_manager.set_state(project_id, issue_iid, PipelineState.SECURITY_READY)
                 
             elif event_type == "push" and "security-report.json" in payload.get("added_files", []):
-                await self._run_agent(self.devops_agent, context, PipelineState.SECURITY_READY, PipelineState.DONE)
+                self._run_agent(self.devops_agent, context, PipelineState.SECURITY_READY, PipelineState.DONE)
                 
         except Exception as e:
             logger.exception("orchestrator_agent_failure", error=str(e), issue_iid=issue_iid)
             self.state_manager.set_state(project_id, issue_iid, PipelineState.HUMAN_INTERVENTION_REQUIRED)
             self.gitlab.post_issue_comment(issue_iid, f"❌ Pipeline failed: {str(e)}. Human intervention required.")
 
-    async def _run_agent(self, agent: Any, context: Dict[str, Any], pre_state: PipelineState, post_state: PipelineState) -> None:
+    def _run_agent(self, agent: Any, context: Dict[str, Any], pre_state: PipelineState, post_state: PipelineState) -> None:
         """Helper to run an agent with state transitions and retries."""
         project_id = context['project_id']
         issue_iid = context['issue_iid']
         
-        # Verify current state if needed (skipped for brevity)
         self.state_manager.set_state(project_id, issue_iid, pre_state)
         
         # Retry logic
         max_retries = settings.AGENT_MAX_RETRIES
         for attempt in range(max_retries + 1):
             try:
-                updated_context = await agent.run(context)
+                updated_context = agent.run(context)
                 self.state_manager.update_context(project_id, issue_iid, updated_context)
                 self.state_manager.set_state(project_id, issue_iid, post_state)
                 return
@@ -214,4 +211,4 @@ class Orchestrator:
                 if attempt == max_retries:
                     raise e
                 logger.warning("agent_retry", agent=agent.name, attempt=attempt + 1, error=str(e))
-                await asyncio.sleep(2 ** attempt)
+                time.sleep(2 ** attempt)

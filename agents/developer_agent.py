@@ -16,7 +16,7 @@ class DeveloperAgent(BaseAgent):
     def system_prompt_file(self) -> str:
         return "developer_agent.txt"
 
-    async def run(self, context: Dict[str, Any]) -> Dict[str, Any]:
+    def run(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Runs the Developer agent on requirements and architecture."""
         project_id = context['project_id']
         issue_iid = context['issue_iid']

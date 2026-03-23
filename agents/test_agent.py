@@ -16,7 +16,7 @@ class TestAgent(BaseAgent):
     def system_prompt_file(self) -> str:
         return "test_agent.txt"
 
-    async def run(self, context: Dict[str, Any]) -> Dict[str, Any]:
+    def run(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Runs the Test agent on source files."""
         branch_name = context['branch_name']
         mr_iid = context.get('mr_iid')

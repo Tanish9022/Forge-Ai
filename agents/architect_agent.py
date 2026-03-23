@@ -16,7 +16,7 @@ class ArchitectAgent(BaseAgent):
     def system_prompt_file(self) -> str:
         return "architect_agent.txt"
 
-    async def run(self, context: Dict[str, Any]) -> Dict[str, Any]:
+    def run(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Runs the Architect agent on a requirements document."""
         project_id = context['project_id']
         issue_iid = context['issue_iid']

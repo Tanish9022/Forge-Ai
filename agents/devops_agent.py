@@ -1,4 +1,4 @@
-import asyncio
+import time
 import structlog
 import re
 from typing import Any, Dict, List
@@ -17,7 +17,7 @@ class DevOpsAgent(BaseAgent):
     def system_prompt_file(self) -> str:
         return "devops_agent.txt"
 
-    async def run(self, context: Dict[str, Any]) -> Dict[str, Any]:
+    def run(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Runs the DevOps agent on the project structure."""
         branch_name = context['branch_name']
         mr_iid = context.get('mr_iid')
@@ -54,7 +54,7 @@ class DevOpsAgent(BaseAgent):
             status = self.gitlab.get_pipeline_status(pipeline_id)
             if status in ["success", "failed", "canceled", "skipped"]:
                 break
-            await asyncio.sleep(10)
+            time.sleep(10)
             
         if status == "success" and mr_iid:
             mr = self.gitlab.project.mergerequests.get(mr_iid)

@@ -16,7 +16,7 @@ class ReviewAgent(BaseAgent):
     def system_prompt_file(self) -> str:
         return "review_agent.txt"
 
-    async def run(self, context: Dict[str, Any]) -> Dict[str, Any]:
+    def run(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Runs the Review agent on a Merge Request diff."""
         mr_iid = context['mr_iid']
         

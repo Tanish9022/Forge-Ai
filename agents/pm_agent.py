@@ -15,7 +15,7 @@ class PMAgent(BaseAgent):
     def system_prompt_file(self) -> str:
         return "pm_agent.txt"
 
-    async def run(self, context: Dict[str, Any]) -> Dict[str, Any]:
+    def run(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Runs the PM agent on a GitLab issue."""
         project_id = context['project_id']
         issue_iid = context['issue_iid']

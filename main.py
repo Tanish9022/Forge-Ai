@@ -77,8 +77,6 @@ async def webhook(
         # Security check
         if not x_gitlab_token or not hmac.compare_digest(x_gitlab_token, settings.GITLAB_WEBHOOK_SECRET):
             logger.warning("webhook_auth_failed")
-            # We return 202 even on auth failure to prevent GitLab from disabling the webhook
-            # but we don't process the task.
             return {"status": "ignored", "reason": "unauthorized"}
 
         try:
@@ -90,6 +88,8 @@ async def webhook(
         logger.info("webhook_received", event=x_gitlab_event)
 
         # Process in background to prevent GitLab timeout
+        # Using synchronous process_pipeline so FastAPI runs it in a thread pool,
+        # ensuring the event loop stays free for other incoming webhooks.
         background_tasks.add_task(process_pipeline, payload, x_gitlab_event)
 
         return {"status": "accepted", "message": "Pipeline processing started"}
@@ -98,10 +98,10 @@ async def webhook(
         logger.error("webhook_top_level_error", error=str(e))
         return {"status": "error", "message": "Internal error handled"}
 
-async def process_pipeline(payload: dict, event_header: str):
+def process_pipeline(payload: dict, event_header: str):
     """
     Background task to process the GitLab event through the agents pipeline.
-    Safe execution wrapper.
+    Safe synchronous execution wrapper.
     """
     try:
         logger.info("pipeline_started", event=event_header)
@@ -126,14 +126,14 @@ async def process_pipeline(payload: dict, event_header: str):
             return
 
         if parsed_payload:
-            await orchestrator.handle_event(event_type, parsed_payload)
+            # handle_event is now synchronous
+            orchestrator.handle_event(event_type, parsed_payload)
             logger.info("pipeline_completed_successfully", event_type=event_type)
         else:
             logger.warning("payload_parsing_failed", event_header=event_header)
 
     except Exception as e:
         logger.error("pipeline_execution_error", error=str(e), event=event_header)
-        # Never raise here to avoid crashing the server
 
 if __name__ == "__main__":
     import uvicorn

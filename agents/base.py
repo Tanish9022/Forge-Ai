@@ -32,7 +32,7 @@ class BaseAgent(ABC):
             return f.read()
 
     @abstractmethod
-    async def run(self, context: Dict[str, Any]) -> Dict[str, Any]:
+    def run(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Main execution logic for the agent."""
         pass
 

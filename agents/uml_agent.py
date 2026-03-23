@@ -16,7 +16,7 @@ class UMLAgent(BaseAgent):
     def system_prompt_file(self) -> str:
         return "uml_agent.txt"
 
-    async def run(self, context: Dict[str, Any]) -> Dict[str, Any]:
+    def run(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Runs the UML agent to generate diagrams."""
         project_id = context['project_id']
         issue_iid = context['issue_iid']
