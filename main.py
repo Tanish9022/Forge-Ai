@@ -138,13 +138,14 @@ def process_pipeline(body: bytes, event_header: str):
         }
         
         event_type = event_map.get(event_header)
+        print("PIPELINE STARTED")
         print("EVENT TYPE:", event_type)
         
         if not event_type:
             print(f"UNHANDLED EVENT: {event_header}")
             return
 
-        logger.info("pipeline_started", event=event_type)
+        logger.info("pipeline_started", event_type=event_type)
         
         parsed_payload = None
         if event_type == "issue":
@@ -180,7 +181,7 @@ def process_pipeline(body: bytes, event_header: str):
 
     except Exception as e:
         print(f"PIPELINE ERROR: {str(e)}")
-        logger.error("pipeline_execution_error", error=str(e), event=event_header)
+        logger.error("pipeline_execution_error", error=str(e), event_type=event_header)
 
 if __name__ == "__main__":
     import uvicorn
