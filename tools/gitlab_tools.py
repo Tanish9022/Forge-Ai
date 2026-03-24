@@ -95,6 +95,35 @@ class GitLabTools:
             logger.error("file_creation_failed", file=file_path, branch=branch, error=str(e))
             raise e
 
+    def upsert_file(self, branch: str, file_path: str, content: str, commit_message: str) -> None:
+        """Creates or updates a file in GitLab."""
+        try:
+            print(f"UPSERTING FILE: {file_path} ON BRANCH: {branch}")
+            try:
+                # Try to get file to see if it exists
+                self.project.files.get(file_path=file_path, ref=branch)
+                action = 'update'
+            except:
+                action = 'create'
+            
+            self.project.files.create({
+                "file_path": file_path,
+                "branch": branch,
+                "content": content,
+                "commit_message": commit_message
+            }) if action == 'create' else self.project.files.update({
+                "file_path": file_path,
+                "branch": branch,
+                "content": content,
+                "commit_message": commit_message
+            })
+            print(f"FILE {action.upper()}D SUCCESSFULLY")
+            logger.info("file_upsert_success", file=file_path, action=action)
+        except Exception as e:
+            print(f"FILE UPSERT FAILED: {str(e)}")
+            logger.error("file_upsert_failed", file=file_path, error=str(e))
+            raise e
+
     def commit_file(self, branch: str, file_path: str, content: str, commit_message: str) -> None:
         """Commits or updates a file."""
         try:

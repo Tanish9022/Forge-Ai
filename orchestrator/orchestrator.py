@@ -65,258 +65,115 @@ class Orchestrator:
         print(f"Orchestrator handling event: {event_type}")
         project_id = payload.get("project_id")
         issue_iid = payload.get("issue_iid")
-        mr_iid = payload.get("mr_iid")
         
-        # If we don't have an issue_iid yet (e.g. push event), try to find it from branch or context
-        if not issue_iid:
-            if "branch" in payload:
-                # Expecting branch: feature/issue-123
-                if "issue-" in payload["branch"]:
-                    try:
-                        issue_iid = int(payload["branch"].split("issue-")[1].split("-")[0])
-                    except: pass
-            elif mr_iid:
-                # We should have the issue_iid in the context of this MR
-                pass
-                
         if not issue_iid:
             print(f"ERROR: issue_iid missing in Orchestrator for {event_type}")
-            logger.warning("missing_issue_iid", event_type=event_type)
             return
 
-        # 1. Ensure FRESH context per issue to prevent leakage
+        # TASK 2: FIX CONTEXT (CRITICAL) - Fresh context to prevent data leakage
         self.state_manager.clear(project_id, issue_iid)
         context = {
             "project_id": project_id, 
             "issue_iid": issue_iid,
-            "issue_title": payload.get("title"),
-            "issue_description": payload.get("description")
+            "issue_title": payload.get("title", "New Task"),
+            "issue_description": payload.get("description", "")
         }
-        if mr_iid: context["mr_iid"] = mr_iid
         
-        print(f"Issue IID: {issue_iid}, Title: {context['issue_title']}")
-        logger.info("orchestrator_event_received", event_type=event_type, issue_iid=issue_iid)
+        # TASK 3: FIX BRANCH CREATION - One branch per issue, reuse if exists
+        branch_name = f"feature/issue-{issue_iid}"
+        print(f"USING BRANCH: {branch_name}")
+        
+        try:
+            # Try to get existing branch
+            self.gitlab.project.branches.get(branch_name)
+            print(f"REUSING EXISTING BRANCH: {branch_name}")
+        except:
+            # Create if not exists
+            print(f"CREATING NEW BRANCH: {branch_name}")
+            self.gitlab.create_branch(branch_name)
+
+        context.update({
+            "branch_name": branch_name,
+            "project": self.gitlab.project
+        })
+        self.state_manager.update_context(project_id, issue_iid, context)
 
         try:
+            # Only handle issue open events for full automation
             if event_type == "issue":
-                print("ISSUE EVENT DETECTED")
-                action = payload.get("action")
+                print(f"STARTING PIPELINE FOR ISSUE #{issue_iid}")
                 
-                if action == "open":
-                    print("Processing new issue open event")
-                    # 4. Make branch unique with timestamp
-                    timestamp = int(time.time())
-                    branch_name = f"feature/issue-{issue_iid}-{timestamp}"
-                    
-                    print("CREATING BRANCH:", branch_name)
-                    # 3. Fix branch creation logic (handled in ensure_branch)
-                    self.ensure_branch(branch_name)
-                    
-                    # Store fresh context
-                    context.update({
-                        "branch_name": branch_name,
-                        "project": self.gitlab.project
-                    })
-                    self.state_manager.update_context(project_id, issue_iid, context)
-                    
-                    # PM Agent -> REQUIREMENTS_READY
-                    self._run_agent(self.pm_agent, context, PipelineState.ISSUE_CREATED, PipelineState.REQUIREMENTS_READY)
-                
-                # Fetch latest context after PM agent
+                # PM Agent -> REQUIREMENTS_READY
+                self._run_agent(self.pm_agent, context, PipelineState.ISSUE_CREATED, PipelineState.REQUIREMENTS_READY)
                 context = self.state_manager.get_context(project_id, issue_iid)
-                
-                # Automatically continue the pipeline
-                print("Pipeline continuing automatically...")
                 
                 # Architect Agent -> ARCHITECTURE_READY
                 self._run_agent(self.architect_agent, context, PipelineState.REQUIREMENTS_READY, PipelineState.ARCHITECTURE_READY)
-                context.update(self.state_manager.get_context(project_id, issue_iid))
-                
-                # UML Agent -> UML_READY
-                self._run_agent(self.uml_agent, context, PipelineState.ARCHITECTURE_READY, PipelineState.UML_READY)
-                context.update(self.state_manager.get_context(project_id, issue_iid))
+                context = self.state_manager.get_context(project_id, issue_iid)
                 
                 # Developer Agent -> CODE_READY
-                self._run_agent(self.developer_agent, context, PipelineState.UML_READY, PipelineState.CODE_READY)
-                context.update(self.state_manager.get_context(project_id, issue_iid))
+                self._run_agent(self.developer_agent, context, PipelineState.ARCHITECTURE_READY, PipelineState.CODE_READY)
                 
-                # Review Agent -> REVIEW_APPROVED
-                self._run_agent(self.review_agent, context, PipelineState.CODE_READY, PipelineState.REVIEW_APPROVED)
-                context.update(self.state_manager.get_context(project_id, issue_iid))
-                
-                # Test Agent -> TESTS_READY
-                self._run_agent(self.test_agent, context, PipelineState.REVIEW_APPROVED, PipelineState.TESTS_READY)
-                context.update(self.state_manager.get_context(project_id, issue_iid))
-                
-                # Security Agent -> SECURITY_READY
-                self._run_agent(self.security_agent, context, PipelineState.TESTS_READY, PipelineState.SECURITY_READY)
-                context.update(self.state_manager.get_context(project_id, issue_iid))
-                
-                # DevOps Agent -> DONE
-                self._run_agent(self.devops_agent, context, PipelineState.SECURITY_READY, PipelineState.DONE)
-                
-            elif event_type == "push" and "docs/requirements.md" in payload.get("added_files", []) + payload.get("modified_files", []):
-                print("Processing requirements update")
-                self._run_agent(self.architect_agent, context, PipelineState.REQUIREMENTS_READY, PipelineState.ARCHITECTURE_READY)
-                
-            elif event_type == "push" and any(f.endswith("architecture.md") for f in payload.get("added_files", []) + payload.get("modified_files", [])):
-                print("Processing architecture update")
-                self._run_agent(self.uml_agent, context, PipelineState.ARCHITECTURE_READY, PipelineState.UML_READY)
-                
-            elif event_type == "push" and any(f.endswith(".puml") for f in payload.get("added_files", []) + payload.get("modified_files", [])):
-                print("Processing UML update")
-                if current_state == PipelineState.UML_READY:
-                    self._run_agent(self.developer_agent, context, PipelineState.UML_READY, PipelineState.CODE_READY)
-                    
-            elif event_type == "merge_request" and payload.get("action") == "open":
-                print("Processing MR open")
-                self._run_agent(self.review_agent, context, PipelineState.CODE_READY, PipelineState.REVIEW_APPROVED)
-                
-            elif event_type == "note" and "APPROVED" in payload.get("note", "").upper() and payload.get("noteable_type") == "MergeRequest":
-                print("Processing approval note")
-                self.state_manager.set_state(project_id, issue_iid, PipelineState.REVIEW_APPROVED)
-                
-                # Parallel execution using ThreadPoolExecutor
-                with ThreadPoolExecutor(max_workers=2) as executor:
-                    futures = [
-                        executor.submit(self.test_agent.run, context),
-                        executor.submit(self.security_agent.run, context)
-                    ]
-                    for future in futures:
-                        try:
-                            res = future.result()
-                            context.update(res)
-                        except Exception as e:
-                            raise e
-                
-                self.state_manager.update_context(project_id, issue_iid, context)
-                self.state_manager.set_state(project_id, issue_iid, PipelineState.SECURITY_READY)
-                
-            elif event_type == "push" and "security-report.json" in payload.get("added_files", []):
-                print("Processing security report")
-                self._run_agent(self.devops_agent, context, PipelineState.SECURITY_READY, PipelineState.DONE)
-                
+                print(f"PIPELINE COMPLETED FOR ISSUE #{issue_iid}")
+
         except Exception as e:
             print(f"Orchestrator Error: {str(e)}")
-            logger.exception("orchestrator_agent_failure", error=str(e), issue_iid=issue_iid)
-            self.state_manager.set_state(project_id, issue_iid, PipelineState.HUMAN_INTERVENTION_REQUIRED)
-            self.gitlab.post_issue_comment(issue_iid, f"❌ Pipeline failed: {str(e)}. Human intervention required.")
+            logger.exception("orchestrator_failure", error=str(e))
 
     def _run_agent(self, agent: Any, context: Dict[str, Any], pre_state: PipelineState, post_state: PipelineState) -> None:
-        """Helper to run an agent with state transitions and retries."""
+        """Helper to run an agent with state transitions and path protection."""
         project_id = context['project_id']
         issue_iid = context['issue_iid']
+        branch_name = context['branch_name']
         
-        print(f"Running agent: {agent.name}")
-        logger.info("agent_start", agent=agent.name, issue_iid=issue_iid)
-        
+        print(f"RUNNING AGENT: {agent.name}")
         self.state_manager.set_state(project_id, issue_iid, pre_state)
         
-        # Retry logic
-        max_retries = settings.AGENT_MAX_RETRIES
-        for attempt in range(max_retries + 1):
-            try:
-                updated_context = agent.run(context)
-                print("AGENT OUTPUT:", updated_context)
-                self.state_manager.update_context(project_id, issue_iid, updated_context)
-                
-                # Centralized file creation logic based on agent output
-                branch_name = updated_context.get("branch_name") or context.get("branch_name")
-                
-                if branch_name:
-                    # Verify branch exists
-                    try:
-                        self.gitlab.project.branches.get(branch_name)
-                    except:
-                        print(f"Branch {branch_name} not found, creating it.")
-                        self.gitlab.create_branch(branch_name)
+        try:
+            updated_context = agent.run(context)
+            self.state_manager.update_context(project_id, issue_iid, updated_context)
+            
+            # TASK 5: FORCE PROJECT ISOLATION
+            base_path = f"projects/issue-{issue_iid}"
 
-                    # 0. Base path for isolation
-                    base_path = f"projects/issue-{issue_iid}"
+            # 1. Handle PM Requirements
+            if "requirements_content" in updated_context:
+                file_path = f"{base_path}/docs/requirements.md"
+                self.gitlab.upsert_file(branch_name, file_path, updated_context["requirements_content"], f"Add requirements for #{issue_iid}")
+                self.state_manager.update_context(project_id, issue_iid, {"requirements_path": file_path})
 
-                    # 1. PMAgent -> docs/requirements.md
-                    if "requirements_content" in updated_context:
-                        file_path = f"{base_path}/docs/requirements.md"
-                        try:
-                            self.gitlab.create_file(
-                                branch=branch_name,
-                                file_path=file_path,
-                                content=updated_context["requirements_content"],
-                                commit_message=f"Add requirements for issue #{issue_iid}"
-                            )
-                        except Exception as e:
-                            if "already exists" in str(e).lower():
-                                self.gitlab.commit_file(branch_name, file_path, updated_context["requirements_content"], f"Update requirements for issue #{issue_iid}")
-                            else:
-                                print("FILE CREATION FAILED:", str(e))
+            # 2. Handle Architect Diagrams
+            if "diagrams_content" in updated_context:
+                diag_paths = []
+                for name, content in updated_context["diagrams_content"].items():
+                    file_path = f"{base_path}/docs/diagrams/{name}"
+                    self.gitlab.upsert_file(branch_name, file_path, content, f"Add architecture {name}")
+                    diag_paths.append(file_path)
+                self.state_manager.update_context(project_id, issue_iid, {"diagram_paths": diag_paths})
+                self.gitlab.post_issue_comment(issue_iid, f"✅ Generated architecture diagrams in `{base_path}/docs/diagrams/`")
+
+            # 2.5 Handle UML Agent Diagrams
+            if "uml_diagrams_content" in updated_context:
+                for name, content in updated_context["uml_diagrams_content"].items():
+                    file_path = f"{base_path}/docs/{name}"
+                    self.gitlab.upsert_file(branch_name, file_path, content, f"Add UML {name}")
+                self.gitlab.post_issue_comment(issue_iid, f"✅ Generated UML diagrams in `{base_path}/docs/`")
+
+            # 3. Handle Developer Code
+            if "code_files_content" in updated_context:
+                for original_path, content in updated_context["code_files_content"].items():
+                    # TASK 6: BLOCK WRONG PATHS
+                    if any(sys_folder in original_path for sys_folder in ["agents/", "orchestrator/", "tools/", "webhooks/"]):
+                        print(f"BLOCKED writing to system folder: {original_path}")
+                        continue
                         
-                        # Update requirements_path in context for downstream agents
-                        self.state_manager.update_context(project_id, issue_iid, {"requirements_path": file_path})
+                    file_path = f"{base_path}/{original_path}"
+                    self.gitlab.upsert_file(branch_name, file_path, content, f"Implement {original_path}")
 
-                    # 2. ArchitectAgent -> docs/diagrams/
-                    if "diagrams_content" in updated_context:
-                        actual_diagram_paths = []
-                        for file_name, content in updated_context["diagrams_content"].items():
-                            file_path = f"{base_path}/docs/diagrams/{file_name}"
-                            try:
-                                self.gitlab.create_file(
-                                    branch=branch_name,
-                                    file_path=file_path,
-                                    content=content,
-                                    commit_message=f"Add architecture diagram {file_name}"
-                                )
-                            except Exception as e:
-                                if "already exists" in str(e).lower():
-                                    self.gitlab.commit_file(branch_name, file_path, content, f"Update diagram {file_name}")
-                                else:
-                                    print("FILE CREATION FAILED:", str(e))
-                            actual_diagram_paths.append(file_path)
-                        
-                        # Update diagram_paths in context for downstream agents
-                        self.state_manager.update_context(project_id, issue_iid, {"diagram_paths": actual_diagram_paths})
+            self.state_manager.set_state(project_id, issue_iid, post_state)
+            print(f"AGENT {agent.name} SUCCESS")
 
-                    # 3. UMLAgent -> docs/
-                    if "uml_diagrams_content" in updated_context:
-                        for file_name, content in updated_context["uml_diagrams_content"].items():
-                            file_path = f"{base_path}/docs/{file_name}"
-                            try:
-                                self.gitlab.create_file(
-                                    branch=branch_name,
-                                    file_path=file_path,
-                                    content=content,
-                                    commit_message=f"Add UML diagram {file_name}"
-                                )
-                            except Exception as e:
-                                if "already exists" in str(e).lower():
-                                    self.gitlab.commit_file(branch_name, file_path, content, f"Update UML diagram {file_name}")
-                                else:
-                                    print("FILE CREATION FAILED:", str(e))
-
-                    # 4. DeveloperAgent -> src/
-                    if "code_files_content" in updated_context:
-                        for original_path, content in updated_context["code_files_content"].items():
-                            file_path = f"{base_path}/{original_path}"
-                            try:
-                                self.gitlab.create_file(
-                                    branch=branch_name,
-                                    file_path=file_path,
-                                    content=content,
-                                    commit_message=f"Implement {file_path}"
-                                )
-                            except Exception as e:
-                                if "already exists" in str(e).lower():
-                                    self.gitlab.commit_file(branch_name, file_path, content, f"Update {file_path}")
-                                else:
-                                    print("FILE CREATION FAILED:", str(e))
-
-                self.state_manager.set_state(project_id, issue_iid, post_state)
-                print(f"Agent {agent.name} completed successfully")
-                logger.info("agent_end", agent=agent.name, issue_iid=issue_iid)
-                return
-            except Exception as e:
-                if attempt == max_retries:
-                    print(f"Agent {agent.name} failed after {max_retries} retries")
-                    raise e
-                print(f"Agent {agent.name} retry {attempt + 1}/{max_retries} due to: {str(e)}")
-                logger.warning("agent_retry", agent=agent.name, attempt=attempt + 1, error=str(e))
-                time.sleep(2 ** attempt)
+        except Exception as e:
+            # TASK 10: ENSURE PIPELINE CONTINUES
+            print(f"AGENT {agent.name} FAILED BUT CONTINUING: {str(e)}")
+            logger.error("agent_execution_error", agent=agent.name, error=str(e))

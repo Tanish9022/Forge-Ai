@@ -18,59 +18,36 @@ class UMLAgent(BaseAgent):
 
     def run(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Runs the UML agent to generate diagrams."""
-        project_id = context['project_id']
         issue_iid = context['issue_iid']
         branch_name = context['branch_name']
-        requirements_path = context.get('requirements_path', 'docs/requirements.md')
-        architecture_path = context.get('architecture_path', 'docs/architecture.md')
+        requirements_path = context.get('requirements_path')
         
         logger.info("uml_agent_start", issue_iid=issue_iid)
         
-        # Gather information from previous steps
         requirements_content = ""
-        try:
-            requirements_content = self.gitlab.get_repository_file(requirements_path, branch_name)
-        except:
-            logger.warning("uml_agent_requirements_not_found", path=requirements_path)
+        if requirements_path:
+            try:
+                requirements_content = self.gitlab.get_repository_file(requirements_path, branch_name)
+            except: pass
 
-        architecture_content = ""
-        try:
-            # Check if architect agent provides a different path or if we should just try to read it
-            # Architecture agent usually writes to docs/diagrams/ so we might need a general arch doc
-            # but for now let's assume we can get some context.
-            architecture_content = self.gitlab.get_repository_file(architecture_path, branch_name)
-        except:
-            logger.warning("uml_agent_architecture_not_found", path=architecture_path)
-            
-        system_prompt = self.load_prompt()
-        user_prompt = f"Feature Requirements:\n{requirements_content}\n\nArchitecture Design:\n{architecture_content}"
+        # TASK 7: FIX AI PROMPT
+        system_prompt = f"""
+You are a Lead Designer creating UML for a NEW application project.
+
+STRICT RULES:
+- DO NOT use existing repository structure (agents/, orchestrator/, tools/)
+- ONLY design UML for a fresh application
+- Use PlantUML
+
+Return diagrams wrapped in @startuml and @enduml.
+"""
+        user_prompt = f"Create UML diagrams for: {context.get('issue_title')}\n\nRequirements:\n{requirements_content}"
         
         llm_response = self.llm.call(system_prompt, user_prompt)
         
         diagrams = self._parse_diagrams(llm_response)
         
-        base_path = f"projects/issue-{issue_iid}"
-        diagram_paths = []
-        for file_name, content in diagrams.items():
-            path = f"{base_path}/docs/{file_name}"
-            self.gitlab.commit_file(
-                branch=branch_name,
-                file_path=path,
-                content=content,
-                commit_message=f"docs: generate {file_name} for issue #{issue_iid}"
-            )
-            diagram_paths.append(path)
-            
-        summary = f"UML diagrams generated for issue #{issue_iid}:\n"
-        for path in diagram_paths:
-            summary += f"- {path}\n"
-        
-        self.gitlab.post_issue_comment(issue_iid, summary)
-        
-        logger.info("uml_agent_complete", diagram_count=len(diagram_paths))
-        
         return {
-            "uml_diagram_paths": diagram_paths,
             "uml_diagrams_content": diagrams
         }
 

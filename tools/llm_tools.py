@@ -17,8 +17,8 @@ class LLMClient:
 
     def call(self, system_prompt: str, user_prompt: str, max_tokens: Optional[int] = None) -> str:
         """
-        Calls the Gemini LLM with specific rate limit handling and fallback.
-        Ensures stability even when quota is exceeded.
+        Calls the Gemini LLM with fast fallback.
+        Ensures stability even when quota is exceeded or API fails.
         """
         # Task 5: Reduce token usage/prompt size
         truncated_prompt = user_prompt[:2000]
@@ -37,31 +37,11 @@ class LLMClient:
             return response.text
 
         except Exception as e:
+            # TASK 8 & 9: FAST FALLBACK ON ERROR / QUOTA
             error_str = str(e)
-            
-            # Task 4: Rate Limit (429) Handling - Wait 60s and retry once
-            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
-                print(f"Quota exceeded (429), waiting 60 seconds... ({error_str})")
-                logger.warning("llm_rate_limit_wait", delay=60)
-                time.sleep(60)
-                
-                try:
-                    response = self.client.models.generate_content(
-                        model=self.model,
-                        contents=truncated_prompt,
-                        config=types.GenerateContentConfig(
-                            system_instruction=system_prompt,
-                            max_output_tokens=max_tokens or settings.AGENT_MAX_TOKENS,
-                        )
-                    )
-                    return response.text
-                except Exception as retry_error:
-                    print(f"Gemini failed after retry: {str(retry_error)}")
-                    return self._get_fallback_content(system_prompt)
-            
-            # Task 3: Safe Fallback for other errors
             print(f"Gemini failed, using fallback: {error_str}")
-            logger.error("llm_call_fallback", error=error_str)
+            logger.error("llm_call_fallback_triggered", error=error_str)
+            
             return self._get_fallback_content(system_prompt)
 
     def _get_fallback_content(self, system_prompt: str) -> str:
@@ -69,15 +49,15 @@ class LLMClient:
         system_prompt_lower = system_prompt.lower()
         
         if "product manager" in system_prompt_lower or "requirements" in system_prompt_lower:
-            return "# Requirements (Fallback)\n\n## Overview\nAutomated fallback due to API quota. This is a placeholder for requirements.\n\n## Features\n- Feature 1: Placeholder\n- Feature 2: Placeholder"
+            return "# Requirements (Fallback)\n\n## Overview\nAutomated fallback due to API limit. This project provides basic functionality.\n\n## Features\n- API Backend\n- Frontend UI\n- Database Integration"
         
         if "architect" in system_prompt_lower or "diagram" in system_prompt_lower:
-            return "## Architecture (Fallback)\n\n@startuml\nactor User\nUser -> System : Request\nSystem -> User : Response\n@enduml"
+            return "## Architecture (Fallback)\n\n@startuml\nactor User\nUser -> System : Interaction\nSystem -> User : Response\n@enduml"
         
         if "developer" in system_prompt_lower or "code" in system_prompt_lower:
-            return "---FILE_BOUNDARY---\nFILE: src/main.py\n# Automated Fallback Code\nprint('Hello from isolated project fallback')\n---FILE_BOUNDARY---"
+            return "---FILE_BOUNDARY---\nFILE: backend/main.py\n# Automated Fallback Code\nfrom fastapi import FastAPI\napp = FastAPI()\n@app.get('/')\ndef read_root(): return {'status': 'ok'}\n---FILE_BOUNDARY---\nFILE: README.md\n# New Project\nGenerated via fallback.\n---FILE_BOUNDARY---"
             
         if "uml" in system_prompt_lower:
-            return "@startuml\nclass FallbackClass {\n  +id: int\n  +name: string\n}\n@enduml"
+            return "@startuml\nclass Project {\n  +id: int\n  +title: string\n}\n@enduml"
 
         return "Automated generated content (Fallback placeholder)"

@@ -61,10 +61,25 @@ async def webhook(
         if not x_gitlab_token or not hmac.compare_digest(x_gitlab_token, GITLAB_WEBHOOK_SECRET):
             return Response(content=json.dumps({"status": "ignored", "reason": "unauthorized"}), status_code=401, media_type="application/json")
 
+        # Event Type Mapping
+        event_map = {
+            "Issue Hook": "issue",
+            "Push Hook": "push",
+            "Merge Request Hook": "merge_request",
+            "Note Hook": "note"
+        }
+        event_type = event_map.get(x_gitlab_event)
+
+        # TASK 1: FIX WEBHOOK (IGNORE DUPLICATES)
+        # Only process issue events to ensure the pipeline runs once
+        if event_type != "issue":
+            print(f"Ignoring event: {x_gitlab_event} ({event_type})")
+            return Response(content=json.dumps({"status": "ignored", "reason": "unhandled_event"}), status_code=200, media_type="application/json")
+
         # 2. Receive raw body asynchronously (fast)
         body = await request.body()
         
-        # 3. Offload ALL processing to background task to ensure 202 is sent ASAP
+        # 3. Offload processing to background task to ensure 202 is sent ASAP
         background_tasks.add_task(process_pipeline, body, x_gitlab_event)
 
         return Response(content=json.dumps({"status": "accepted"}), status_code=202, media_type="application/json")
