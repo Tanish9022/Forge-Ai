@@ -57,10 +57,27 @@ class LLMClient:
                     return response.text
                 except Exception as retry_error:
                     print(f"Gemini failed after retry: {str(retry_error)}")
-                    # Task 3: Fallback content
-                    return "Basic generated content for testing purposes (Fallback after retry)"
+                    return self._get_fallback_content(system_prompt)
             
-            # Task 3: Safe Fallback for other errors (e.g., 404, 500)
+            # Task 3: Safe Fallback for other errors
             print(f"Gemini failed, using fallback: {error_str}")
             logger.error("llm_call_fallback", error=error_str)
-            return "Basic generated content for testing purposes (Immediate fallback)"
+            return self._get_fallback_content(system_prompt)
+
+    def _get_fallback_content(self, system_prompt: str) -> str:
+        """Returns structured mock content based on the agent's role to prevent pipeline break."""
+        system_prompt_lower = system_prompt.lower()
+        
+        if "product manager" in system_prompt_lower or "requirements" in system_prompt_lower:
+            return "# Requirements (Fallback)\n\n## Overview\nAutomated fallback due to API quota. This is a placeholder for requirements.\n\n## Features\n- Feature 1: Placeholder\n- Feature 2: Placeholder"
+        
+        if "architect" in system_prompt_lower or "diagram" in system_prompt_lower:
+            return "## Architecture (Fallback)\n\n@startuml\nactor User\nUser -> System : Request\nSystem -> User : Response\n@enduml"
+        
+        if "developer" in system_prompt_lower or "code" in system_prompt_lower:
+            return "---FILE_BOUNDARY---\nFILE: src/main.py\n# Automated Fallback Code\nprint('Hello from isolated project fallback')\n---FILE_BOUNDARY---"
+            
+        if "uml" in system_prompt_lower:
+            return "@startuml\nclass FallbackClass {\n  +id: int\n  +name: string\n}\n@enduml"
+
+        return "Automated generated content (Fallback placeholder)"
