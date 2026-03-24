@@ -16,36 +16,51 @@ class LLMClient:
         self.model = model
 
     def call(self, system_prompt: str, user_prompt: str, max_tokens: Optional[int] = None) -> str:
-        """Calls the Gemini LLM with backoff retries."""
-        max_retries = settings.AGENT_MAX_RETRIES
-        delay = 2
+        """
+        Calls the Gemini LLM with specific rate limit handling and fallback.
+        Ensures stability even when quota is exceeded.
+        """
+        # Task 5: Reduce token usage/prompt size
+        truncated_prompt = user_prompt[:2000]
         
-        for attempt in range(max_retries + 1):
-            try:
-                response = self.client.models.generate_content(
-                    model=self.model,
-                    contents=user_prompt,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system_prompt,
-                        max_output_tokens=max_tokens or settings.AGENT_MAX_TOKENS,
-                    )
+        try:
+            # First Attempt
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=truncated_prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    max_output_tokens=max_tokens or settings.AGENT_MAX_TOKENS,
                 )
+            )
+            logger.info("llm_call_success", model=self.model)
+            return response.text
+
+        except Exception as e:
+            error_str = str(e)
+            
+            # Task 4: Rate Limit (429) Handling - Wait 60s and retry once
+            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                print(f"Quota exceeded (429), waiting 60 seconds... ({error_str})")
+                logger.warning("llm_rate_limit_wait", delay=60)
+                time.sleep(60)
                 
-                content = response.text
-                logger.info("llm_call_success", model=self.model)
-                return content
-                
-            except Exception as e:
-                # Handle rate limits (429) or transient errors (500)
-                error_str = str(e)
-                if "429" in error_str or "500" in error_str:
-                    if attempt == max_retries:
-                        logger.error("llm_call_failed_max_retries", error=error_str)
-                        raise
-                    logger.warning("llm_call_retry", attempt=attempt + 1, delay=delay, error=error_str)
-                    time.sleep(delay)
-                    delay *= 2
-                else:
-                    logger.error("llm_call_error", error=error_str)
-                    raise
-        return ""
+                try:
+                    response = self.client.models.generate_content(
+                        model=self.model,
+                        contents=truncated_prompt,
+                        config=types.GenerateContentConfig(
+                            system_instruction=system_prompt,
+                            max_output_tokens=max_tokens or settings.AGENT_MAX_TOKENS,
+                        )
+                    )
+                    return response.text
+                except Exception as retry_error:
+                    print(f"Gemini failed after retry: {str(retry_error)}")
+                    # Task 3: Fallback content
+                    return "Basic generated content for testing purposes (Fallback after retry)"
+            
+            # Task 3: Safe Fallback for other errors (e.g., 404, 500)
+            print(f"Gemini failed, using fallback: {error_str}")
+            logger.error("llm_call_fallback", error=error_str)
+            return "Basic generated content for testing purposes (Immediate fallback)"
