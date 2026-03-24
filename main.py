@@ -1,8 +1,9 @@
-import time
+import json
 import hmac
 import structlog
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, BackgroundTasks, Header, HTTPException
+from fastapi import FastAPI, Request, BackgroundTasks, Header, Response
+from typing import Optional
 from tools.gitlab_tools import GitLabTools
 from tools.llm_tools import LLMClient
 from orchestrator.orchestrator import Orchestrator
@@ -31,60 +32,13 @@ orchestrator = Orchestrator(gitlab_tools, llm_client, state_manager)
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown."""
     logger.info("startup_checks_begin")
-    
-    # Check for critical missing settings
-    missing = []
-    if not GEMINI_API_KEY: missing.append("GEMINI_API_KEY")
-    if not GITLAB_TOKEN: missing.append("GITLAB_TOKEN")
-    if not GITLAB_PROJECT_ID: missing.append("GITLAB_PROJECT_ID")
-    if not GITLAB_WEBHOOK_SECRET: missing.append("GITLAB_WEBHOOK_SECRET")
-    
-    if missing:
-        logger.warning("missing_environment_variables", missing=missing)
-    else:
-        logger.info("all_critical_env_vars_present")
-
-    # Verify State Manager (Redis or In-Memory fallback)
-    manager_type = type(state_manager).__name__
-    if not state_manager.ping():
-        logger.warning("state_manager_ping_failed", manager=manager_type)
-    else:
-        logger.info("state_manager_connected", manager=manager_type)
-        
-    # Verify GitLab (Optional at startup to prevent crash)
-    try:
-        if not gitlab_tools.ping():
-            logger.warning("gitlab_connection_failed_check_creds")
-        else:
-            logger.info("gitlab_connected")
-    except Exception as e:
-        logger.warning("gitlab_init_error", error=str(e))
-        
     # Log active agents
     agents = ["PMAgent", "ArchitectAgent", "UMLAgent", "DeveloperAgent", "ReviewAgent", "TestAgent", "SecurityAgent", "DevOpsAgent"]
     logger.info("agents_ready", active_agents=agents)
-    
     yield
     logger.info("shutdown")
 
 app = FastAPI(title="ForgeAI - GitLab SDLC Agents", lifespan=lifespan)
-
-@app.get("/")
-def root():
-    """Welcome page with system overview."""
-    return {
-        "name": "ForgeAI - GitLab SDLC Agents",
-        "status": "active",
-        "version": "1.0.0",
-        "endpoints": {
-            "health": "/health",
-            "webhook": "/webhook (POST)"
-        },
-        "links": {
-            "docs": "/docs",
-            "repository": "https://gitlab.com/Tanish98/ai-sdlc-agent"
-        }
-    }
 
 @app.get("/health")
 def health():
@@ -95,17 +49,17 @@ def health():
 async def webhook(
     request: Request, 
     background_tasks: BackgroundTasks,
-    x_gitlab_token: str = Header(None),
-    x_gitlab_event: str = Header(None)
+    x_gitlab_token: Optional[str] = Header(None),
+    x_gitlab_event: Optional[str] = Header(None)
 ):
     """
     Main webhook entry point.
-    Returns 202 immediately after receiving body to prevent GitLab timeout.
+    Returns 202 immediately to prevent GitLab timeout.
     """
     try:
         # 1. Fast security check (constant time)
         if not x_gitlab_token or not hmac.compare_digest(x_gitlab_token, GITLAB_WEBHOOK_SECRET):
-            return {"status": "ignored", "reason": "unauthorized"}
+            return Response(content=json.dumps({"status": "ignored", "reason": "unauthorized"}), status_code=401, media_type="application/json")
 
         # 2. Receive raw body asynchronously (fast)
         body = await request.body()
@@ -113,11 +67,11 @@ async def webhook(
         # 3. Offload ALL processing to background task to ensure 202 is sent ASAP
         background_tasks.add_task(process_pipeline, body, x_gitlab_event)
 
-        return {"status": "accepted"}
+        return Response(content=json.dumps({"status": "accepted"}), status_code=202, media_type="application/json")
     
     except Exception as e:
         logger.error("webhook_top_level_error", error=str(e))
-        return {"status": "error", "message": "Internal error handled"}
+        return Response(content=json.dumps({"status": "error"}), status_code=200, media_type="application/json")
 
 def process_pipeline(body: bytes, event_header: str):
     """
@@ -126,7 +80,6 @@ def process_pipeline(body: bytes, event_header: str):
     """
     print("PIPELINE BACKGROUND TASK STARTED")
     try:
-        import json
         payload = json.loads(body)
         
         # Event Type Mapping

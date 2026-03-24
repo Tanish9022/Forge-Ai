@@ -23,7 +23,7 @@ app_config = load_config()
 GEMINI_API_KEY = app_config.get("GEMINI_API_KEY") or app_config.get("GOOGLE_API_KEY")
 GITLAB_TOKEN = app_config.get("GITLAB_TOKEN")
 GITLAB_PROJECT_ID = app_config.get("GITLAB_PROJECT_ID")
-GITLAB_WEBHOOK_SECRET = app_config.get("GITLAB_WEBHOOK_SECRET")
+GITLAB_WEBHOOK_SECRET = app_config.get("GITLAB_WEBHOOK_SECRET") or ""
 GITLAB_URL = app_config.get("GITLAB_URL", "https://gitlab.com")
 
 # Fail Fast Validation
