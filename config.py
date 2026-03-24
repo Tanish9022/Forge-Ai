@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = app_config.get("REDIS_URL", "redis://localhost:6379/0")
     
     # Agent Settings
-    AGENT_MODEL: str = app_config.get("AGENT_MODEL", "gemini-1.5-pro")
+    AGENT_MODEL: str = app_config.get("AGENT_MODEL", "gemini-1.5-flash")
     AGENT_MAX_TOKENS: int = int(app_config.get("AGENT_MAX_TOKENS", 8192))
     AGENT_TIMEOUT_SECONDS: int = int(app_config.get("AGENT_TIMEOUT_SECONDS", 180))
     AGENT_MAX_RETRIES: int = int(app_config.get("AGENT_MAX_RETRIES", 2))
