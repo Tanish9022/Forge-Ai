@@ -32,11 +32,24 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown."""
     logger.info("startup_checks_begin")
     
-    # Verify Redis (already fallback handled in state.py)
-    if not state_manager.ping():
-        logger.warning("redis_unavailable_running_in_memory_mode")
+    # Check for critical missing settings
+    missing = []
+    if not settings.GOOGLE_API_KEY: missing.append("GOOGLE_API_KEY")
+    if not settings.GITLAB_TOKEN: missing.append("GITLAB_TOKEN")
+    if not settings.GITLAB_PROJECT_ID: missing.append("GITLAB_PROJECT_ID")
+    if not settings.GITLAB_WEBHOOK_SECRET: missing.append("GITLAB_WEBHOOK_SECRET")
+    
+    if missing:
+        logger.warning("missing_environment_variables", missing=missing)
     else:
-        logger.info("state_manager_connected")
+        logger.info("all_critical_env_vars_present")
+
+    # Verify State Manager (Redis or In-Memory fallback)
+    manager_type = type(state_manager).__name__
+    if not state_manager.ping():
+        logger.warning("state_manager_ping_failed", manager=manager_type)
+    else:
+        logger.info("state_manager_connected", manager=manager_type)
         
     # Verify GitLab (Optional at startup to prevent crash)
     try:
@@ -56,6 +69,23 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="ForgeAI - GitLab SDLC Agents", lifespan=lifespan)
 
+@app.get("/")
+def root():
+    """Welcome page with system overview."""
+    return {
+        "name": "ForgeAI - GitLab SDLC Agents",
+        "status": "active",
+        "version": "1.0.0",
+        "endpoints": {
+            "health": "/health",
+            "webhook": "/webhook (POST)"
+        },
+        "links": {
+            "docs": "/docs",
+            "repository": "https://gitlab.com/Tanish98/ai-sdlc-agent"
+        }
+    }
+
 @app.get("/health")
 def health():
     """Returns application health status."""
@@ -73,6 +103,7 @@ async def webhook(
     Immediately returns 202 Accepted and processes the pipeline in the background.
     Never fails with 500 to keep GitLab webhook enabled.
     """
+    print(f"WEBHOOK RECEIVED: {x_gitlab_event}")
     try:
         # Security check
         if not x_gitlab_token or not hmac.compare_digest(x_gitlab_token, settings.GITLAB_WEBHOOK_SECRET):
@@ -86,11 +117,24 @@ async def webhook(
             return {"status": "error", "message": "Invalid JSON"}
 
         logger.info("webhook_received", event=x_gitlab_event)
+        
+        # Event Type Mapping
+        event_map = {
+            "Issue Hook": "issue",
+            "Push Hook": "push",
+            "Merge Request Hook": "merge_request",
+            "Note Hook": "note"
+        }
+        
+        mapped_event = event_map.get(x_gitlab_event)
+        print(f"EVENT DETECTED: {mapped_event}")
+
+        if not mapped_event:
+            print(f"UNHANDLED EVENT: {x_gitlab_event}")
+            return {"status": "ignored", "reason": "unhandled_event"}
 
         # Process in background to prevent GitLab timeout
-        # Using synchronous process_pipeline so FastAPI runs it in a thread pool,
-        # ensuring the event loop stays free for other incoming webhooks.
-        background_tasks.add_task(process_pipeline, payload, x_gitlab_event)
+        background_tasks.add_task(process_pipeline, payload, mapped_event)
 
         return {"status": "accepted", "message": "Pipeline processing started"}
     
@@ -98,42 +142,53 @@ async def webhook(
         logger.error("webhook_top_level_error", error=str(e))
         return {"status": "error", "message": "Internal error handled"}
 
-def process_pipeline(payload: dict, event_header: str):
+def process_pipeline(payload: dict, event_type: str):
     """
     Background task to process the GitLab event through the agents pipeline.
     Safe synchronous execution wrapper.
     """
+    print("PIPELINE STARTED")
     try:
-        logger.info("pipeline_started", event=event_header)
+        logger.info("pipeline_started", event=event_type)
         
         parsed_payload = None
-        event_type = None
 
-        if event_header == "Issue Hook":
+        if event_type == "issue":
             parsed_payload = parser.parse_issue_event(payload)
-            event_type = "issue"
-        elif event_header == "Push Hook":
+        elif event_type == "push":
             parsed_payload = parser.parse_push_event(payload)
-            event_type = "push"
-        elif event_header == "Merge Request Hook":
+        elif event_type == "merge_request":
             parsed_payload = parser.parse_mr_event(payload)
-            event_type = "merge_request"
-        elif event_header == "Note Hook":
+        elif event_type == "note":
             parsed_payload = parser.parse_note_event(payload)
-            event_type = "note"
-        else:
-            logger.info("unhandled_event_type", event_header=event_header)
+
+        print(f"PARSED PAYLOAD: {parsed_payload}")
+
+        if not parsed_payload:
+            print(f"ERROR: Payload parsing failed for {event_type}")
+            logger.warning("payload_parsing_failed", event_type=event_type)
             return
 
-        if parsed_payload:
-            # handle_event is now synchronous
-            orchestrator.handle_event(event_type, parsed_payload)
-            logger.info("pipeline_completed_successfully", event_type=event_type)
-        else:
-            logger.warning("payload_parsing_failed", event_header=event_header)
+        project_id = parsed_payload.get("project_id")
+        issue_iid = parsed_payload.get("issue_iid") or parsed_payload.get("mr_iid")
+
+        # Validate required fields
+        if not project_id:
+            print("ERROR: project_id missing", payload)
+            return
+            
+        if event_type in ["issue", "note", "merge_request"] and not issue_iid:
+            print("ERROR: issue_iid missing", payload)
+            return
+
+        print(f"CALLING ORCHESTRATOR: {event_type}")
+        # handle_event is now synchronous
+        orchestrator.handle_event(event_type, parsed_payload)
+        logger.info("pipeline_completed_successfully", event_type=event_type)
 
     except Exception as e:
-        logger.error("pipeline_execution_error", error=str(e), event=event_header)
+        print(f"PIPELINE ERROR: {str(e)}")
+        logger.error("pipeline_execution_error", error=str(e), event=event_type)
 
 if __name__ == "__main__":
     import uvicorn

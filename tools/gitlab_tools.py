@@ -162,8 +162,14 @@ class GitLabTools:
         """Verifies GitLab connection with detailed logging on failure."""
         try:
             self.gl.auth()
-            # Test project access specifically
+            logger.info("gitlab_auth_success", url=self.url)
+            
+            if not self.project_id:
+                logger.warning("gitlab_project_id_missing_skipping_project_check")
+                return True # Auth worked at least
+                
             self.gl.projects.get(self.project_id)
+            logger.info("gitlab_project_access_success", project_id=self.project_id)
             return True
         except Exception as e:
             logger.warning("gitlab_ping_failed", 
