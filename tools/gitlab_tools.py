@@ -41,6 +41,21 @@ class GitLabTools:
         issue = self.project.issues.get(issue_iid)
         return issue.attributes
 
+    def create_branch(self, branch_name: str, ref: str = 'main') -> None:
+        """Creates a new branch in GitLab."""
+        try:
+            print(f"ATTEMPTING TO CREATE BRANCH: {branch_name} from {ref}")
+            self.project.branches.create({
+                "branch": branch_name,
+                "ref": ref
+            })
+            print("BRANCH CREATED SUCCESSFULLY")
+            logger.info("branch_created_successfully", branch=branch_name)
+        except Exception as e:
+            print("BRANCH CREATION FAILED:", str(e))
+            logger.error("branch_creation_failed", branch=branch_name, error=str(e))
+            raise e
+
     def ensure_branch(self, branch_name: str, ref: str = 'main') -> str:
         """Ensures a branch exists by creating it if it doesn't already exist."""
         try:

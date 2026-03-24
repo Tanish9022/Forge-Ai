@@ -92,22 +92,33 @@ class Orchestrator:
         logger.info("orchestrator_event_received", event_type=event_type, state=current_state, issue_iid=issue_iid)
 
         try:
-            if event_type == "issue" and payload.get("action") == "open":
-                print("Processing new issue open event")
-                # Centralize branch creation to prevent duplication from multiple events
-                branch_name = f"ai-sdlc/issue-{issue_iid}"
-                self.ensure_branch(branch_name)
+            if event_type == "issue":
+                print("ISSUE EVENT DETECTED")
+                action = payload.get("action")
                 
-                # Prepare initial context for all agents
-                context.update({
-                    "project_id": project_id,
-                    "issue_iid": issue_iid,
-                    "branch_name": branch_name,
-                    "project": self.gitlab.project
-                })
-                
-                # PM Agent -> REQUIREMENTS_READY
-                self._run_agent(self.pm_agent, context, PipelineState.ISSUE_CREATED, PipelineState.REQUIREMENTS_READY)
+                if action == "open":
+                    print("Processing new issue open event")
+                    branch_name = f"feature/issue-{issue_iid}"
+                    
+                    print("CREATING BRANCH:", branch_name)
+                    try:
+                        self.gitlab.create_branch(branch_name)
+                    except Exception as e:
+                        print("BRANCH CREATION FAILED:", str(e))
+                        # If branch exists, we can continue, but log it
+                        if "already exists" not in str(e).lower():
+                            raise e
+                    
+                    # Prepare initial context for all agents
+                    context.update({
+                        "project_id": project_id,
+                        "issue_iid": issue_iid,
+                        "branch_name": branch_name,
+                        "project": self.gitlab.project
+                    })
+                    
+                    # PM Agent -> REQUIREMENTS_READY
+                    self._run_agent(self.pm_agent, context, PipelineState.ISSUE_CREATED, PipelineState.REQUIREMENTS_READY)
                 context.update(self.state_manager.get_context(project_id, issue_iid))
                 
                 # Automatically continue the pipeline

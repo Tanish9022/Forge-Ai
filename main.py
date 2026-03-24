@@ -138,6 +138,8 @@ def process_pipeline(body: bytes, event_header: str):
         }
         
         event_type = event_map.get(event_header)
+        print("EVENT TYPE:", event_type)
+        
         if not event_type:
             print(f"UNHANDLED EVENT: {event_header}")
             return
@@ -160,6 +162,7 @@ def process_pipeline(body: bytes, event_header: str):
 
         project_id = parsed_payload.get("project_id")
         issue_iid = parsed_payload.get("issue_iid") or parsed_payload.get("mr_iid")
+        print("ISSUE IID:", issue_iid)
 
         # Validate required fields
         if not project_id:
@@ -170,6 +173,7 @@ def process_pipeline(body: bytes, event_header: str):
             print("ERROR: issue_iid missing", payload)
             return
 
+        print("PIPELINE STARTED")
         print(f"CALLING ORCHESTRATOR: {event_type}")
         orchestrator.handle_event(event_type, parsed_payload)
         logger.info("pipeline_completed_successfully", event_type=event_type)
