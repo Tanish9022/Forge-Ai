@@ -41,8 +41,10 @@ Description: {description}
         
         requirements_content = self.llm.call(system_prompt, user_prompt)
         
-        branch_name = f"ai-sdlc/issue-{issue_iid}"
-        self.gitlab.ensure_branch(branch_name)
+        branch_name = context.get('branch_name')
+        if not branch_name:
+            branch_name = f"feature/issue-{issue_iid}"
+            self.gitlab.ensure_branch(branch_name)
         
         requirements_path = "docs/requirements.md"
         self.gitlab.commit_file(

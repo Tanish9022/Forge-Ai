@@ -70,9 +70,11 @@ class Orchestrator:
         # If we don't have an issue_iid yet (e.g. push event), try to find it from branch or context
         if not issue_iid:
             if "branch" in payload:
-                # Expecting branch: ai-sdlc/issue-123
-                if payload["branch"].startswith("ai-sdlc/issue-"):
-                    issue_iid = int(payload["branch"].split("-")[-1])
+                # Expecting branch: feature/issue-123
+                if "issue-" in payload["branch"]:
+                    try:
+                        issue_iid = int(payload["branch"].split("issue-")[1].split("-")[0])
+                    except: pass
             elif mr_iid:
                 # We should have the issue_iid in the context of this MR
                 pass
@@ -82,19 +84,18 @@ class Orchestrator:
             logger.warning("missing_issue_iid", event_type=event_type)
             return
 
-        current_state = self.state_manager.get_state(project_id, issue_iid)
-        context = self.state_manager.get_context(project_id, issue_iid)
-        # Ensure common IDs and issue data are in context
-        context.update({
+        # 1. Ensure FRESH context per issue to prevent leakage
+        self.state_manager.clear(project_id, issue_iid)
+        context = {
             "project_id": project_id, 
             "issue_iid": issue_iid,
             "issue_title": payload.get("title"),
             "issue_description": payload.get("description")
-        })
+        }
         if mr_iid: context["mr_iid"] = mr_iid
         
-        print(f"Current State: {current_state}, Issue IID: {issue_iid}")
-        logger.info("orchestrator_event_received", event_type=event_type, state=current_state, issue_iid=issue_iid)
+        print(f"Issue IID: {issue_iid}, Title: {context['issue_title']}")
+        logger.info("orchestrator_event_received", event_type=event_type, issue_iid=issue_iid)
 
         try:
             if event_type == "issue":
@@ -103,28 +104,26 @@ class Orchestrator:
                 
                 if action == "open":
                     print("Processing new issue open event")
-                    branch_name = f"feature/issue-{issue_iid}"
+                    # 4. Make branch unique with timestamp
+                    timestamp = int(time.time())
+                    branch_name = f"feature/issue-{issue_iid}-{timestamp}"
                     
                     print("CREATING BRANCH:", branch_name)
-                    try:
-                        self.gitlab.create_branch(branch_name)
-                    except Exception as e:
-                        print("BRANCH CREATION FAILED:", str(e))
-                        # If branch exists, we can continue, but log it
-                        if "already exists" not in str(e).lower():
-                            raise e
+                    # 3. Fix branch creation logic (handled in ensure_branch)
+                    self.ensure_branch(branch_name)
                     
-                    # Prepare initial context for all agents
+                    # Store fresh context
                     context.update({
-                        "project_id": project_id,
-                        "issue_iid": issue_iid,
                         "branch_name": branch_name,
                         "project": self.gitlab.project
                     })
+                    self.state_manager.update_context(project_id, issue_iid, context)
                     
                     # PM Agent -> REQUIREMENTS_READY
                     self._run_agent(self.pm_agent, context, PipelineState.ISSUE_CREATED, PipelineState.REQUIREMENTS_READY)
-                context.update(self.state_manager.get_context(project_id, issue_iid))
+                
+                # Fetch latest context after PM agent
+                context = self.state_manager.get_context(project_id, issue_iid)
                 
                 # Automatically continue the pipeline
                 print("Pipeline continuing automatically...")
