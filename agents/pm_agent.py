@@ -22,11 +22,21 @@ class PMAgent(BaseAgent):
         
         logger.info("pm_agent_start", issue_iid=issue_iid)
         
-        issue_data = self.gitlab.get_issue(issue_iid)
-        title = issue_data['title']
-        description = issue_data['description']
+        # Get title and description from context, fallback to GitLab API if missing
+        title = context.get("issue_title")
+        description = context.get("issue_description")
         
-        user_prompt = f"Title: {title}\nDescription: {description}"
+        if not title or not description:
+            issue_data = self.gitlab.get_issue(issue_iid)
+            title = title or issue_data.get('title')
+            description = description or issue_data.get('description')
+        
+        user_prompt = f"""
+Create requirements for this issue:
+
+Title: {title}
+Description: {description}
+"""
         system_prompt = self.load_prompt()
         
         requirements_content = self.llm.call(system_prompt, user_prompt)

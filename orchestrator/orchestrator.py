@@ -84,8 +84,13 @@ class Orchestrator:
 
         current_state = self.state_manager.get_state(project_id, issue_iid)
         context = self.state_manager.get_context(project_id, issue_iid)
-        # Ensure common IDs are in context
-        context.update({"project_id": project_id, "issue_iid": issue_iid})
+        # Ensure common IDs and issue data are in context
+        context.update({
+            "project_id": project_id, 
+            "issue_iid": issue_iid,
+            "issue_title": payload.get("title"),
+            "issue_description": payload.get("description")
+        })
         if mr_iid: context["mr_iid"] = mr_iid
         
         print(f"Current State: {current_state}, Issue IID: {issue_iid}")
