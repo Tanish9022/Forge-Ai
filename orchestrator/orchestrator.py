@@ -133,12 +133,9 @@ class Orchestrator:
             updated_context = agent.run(context)
             self.state_manager.update_context(project_id, issue_iid, updated_context)
             
-            # TASK 5: FORCE PROJECT ISOLATION
-            base_path = f"projects/issue-{issue_iid}"
-
             # 1. Handle PM Requirements
             if "requirements_content" in updated_context:
-                file_path = f"{base_path}/docs/requirements.md"
+                file_path = "docs/requirements.md"
                 self.gitlab.upsert_file(branch_name, file_path, updated_context["requirements_content"], f"Add requirements for #{issue_iid}")
                 self.state_manager.update_context(project_id, issue_iid, {"requirements_path": file_path})
 
@@ -146,18 +143,18 @@ class Orchestrator:
             if "diagrams_content" in updated_context:
                 diag_paths = []
                 for name, content in updated_context["diagrams_content"].items():
-                    file_path = f"{base_path}/docs/diagrams/{name}"
+                    file_path = f"docs/diagrams/{name}"
                     self.gitlab.upsert_file(branch_name, file_path, content, f"Add architecture {name}")
                     diag_paths.append(file_path)
                 self.state_manager.update_context(project_id, issue_iid, {"diagram_paths": diag_paths})
-                self.gitlab.post_issue_comment(issue_iid, f"✅ Generated architecture diagrams in `{base_path}/docs/diagrams/`")
+                self.gitlab.post_issue_comment(issue_iid, f"✅ Generated architecture diagrams in `docs/diagrams/`")
 
             # 2.5 Handle UML Agent Diagrams
             if "uml_diagrams_content" in updated_context:
                 for name, content in updated_context["uml_diagrams_content"].items():
-                    file_path = f"{base_path}/docs/{name}"
+                    file_path = f"docs/{name}"
                     self.gitlab.upsert_file(branch_name, file_path, content, f"Add UML {name}")
-                self.gitlab.post_issue_comment(issue_iid, f"✅ Generated UML diagrams in `{base_path}/docs/`")
+                self.gitlab.post_issue_comment(issue_iid, f"✅ Generated UML diagrams in `docs/`")
 
             # 3. Handle Developer Code
             if "code_files_content" in updated_context:
@@ -167,7 +164,7 @@ class Orchestrator:
                         print(f"BLOCKED writing to system folder: {original_path}")
                         continue
                         
-                    file_path = f"{base_path}/{original_path}"
+                    file_path = original_path
                     self.gitlab.upsert_file(branch_name, file_path, content, f"Implement {original_path}")
 
             self.state_manager.set_state(project_id, issue_iid, post_state)
