@@ -100,23 +100,34 @@ async def webhook(
 ):
     """
     Main webhook entry point.
-    Immediately returns 202 Accepted and processes the pipeline in the background.
-    Never fails with 500 to keep GitLab webhook enabled.
+    Returns 202 immediately after receiving body to prevent GitLab timeout.
     """
-    print(f"WEBHOOK RECEIVED: {x_gitlab_event}")
     try:
-        # Security check
+        # 1. Fast security check (constant time)
         if not x_gitlab_token or not hmac.compare_digest(x_gitlab_token, settings.GITLAB_WEBHOOK_SECRET):
-            logger.warning("webhook_auth_failed")
             return {"status": "ignored", "reason": "unauthorized"}
 
-        try:
-            payload = await request.json()
-        except Exception as e:
-            logger.error("webhook_json_decode_error", error=str(e))
-            return {"status": "error", "message": "Invalid JSON"}
+        # 2. Receive raw body asynchronously (fast)
+        body = await request.body()
+        
+        # 3. Offload ALL processing to background task to ensure 202 is sent ASAP
+        background_tasks.add_task(process_pipeline, body, x_gitlab_event)
 
-        logger.info("webhook_received", event=x_gitlab_event)
+        return {"status": "accepted"}
+    
+    except Exception as e:
+        logger.error("webhook_top_level_error", error=str(e))
+        return {"status": "error", "message": "Internal error handled"}
+
+def process_pipeline(body: bytes, event_header: str):
+    """
+    Background task to parse and process the GitLab event.
+    Runs in a thread pool to avoid blocking the event loop.
+    """
+    print("PIPELINE BACKGROUND TASK STARTED")
+    try:
+        import json
+        payload = json.loads(body)
         
         # Event Type Mapping
         event_map = {
@@ -126,33 +137,14 @@ async def webhook(
             "Note Hook": "note"
         }
         
-        mapped_event = event_map.get(x_gitlab_event)
-        print(f"EVENT DETECTED: {mapped_event}")
+        event_type = event_map.get(event_header)
+        if not event_type:
+            print(f"UNHANDLED EVENT: {event_header}")
+            return
 
-        if not mapped_event:
-            print(f"UNHANDLED EVENT: {x_gitlab_event}")
-            return {"status": "ignored", "reason": "unhandled_event"}
-
-        # Process in background to prevent GitLab timeout
-        background_tasks.add_task(process_pipeline, payload, mapped_event)
-
-        return {"status": "accepted", "message": "Pipeline processing started"}
-    
-    except Exception as e:
-        logger.error("webhook_top_level_error", error=str(e))
-        return {"status": "error", "message": "Internal error handled"}
-
-def process_pipeline(payload: dict, event_type: str):
-    """
-    Background task to process the GitLab event through the agents pipeline.
-    Safe synchronous execution wrapper.
-    """
-    print("PIPELINE STARTED")
-    try:
         logger.info("pipeline_started", event=event_type)
         
         parsed_payload = None
-
         if event_type == "issue":
             parsed_payload = parser.parse_issue_event(payload)
         elif event_type == "push":
@@ -162,11 +154,8 @@ def process_pipeline(payload: dict, event_type: str):
         elif event_type == "note":
             parsed_payload = parser.parse_note_event(payload)
 
-        print(f"PARSED PAYLOAD: {parsed_payload}")
-
         if not parsed_payload:
             print(f"ERROR: Payload parsing failed for {event_type}")
-            logger.warning("payload_parsing_failed", event_type=event_type)
             return
 
         project_id = parsed_payload.get("project_id")
@@ -182,13 +171,12 @@ def process_pipeline(payload: dict, event_type: str):
             return
 
         print(f"CALLING ORCHESTRATOR: {event_type}")
-        # handle_event is now synchronous
         orchestrator.handle_event(event_type, parsed_payload)
         logger.info("pipeline_completed_successfully", event_type=event_type)
 
     except Exception as e:
         print(f"PIPELINE ERROR: {str(e)}")
-        logger.error("pipeline_execution_error", error=str(e), event=event_type)
+        logger.error("pipeline_execution_error", error=str(e), event=event_header)
 
 if __name__ == "__main__":
     import uvicorn
