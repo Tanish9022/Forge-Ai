@@ -77,6 +77,24 @@ class GitLabTools:
                     logger.error("branch_creation_failed", branch=branch_name, error=str(e))
                     raise
 
+    def create_file(self, branch: str, file_path: str, content: str, commit_message: str) -> None:
+        """Creates a new file in GitLab with logging."""
+        try:
+            print(f"CREATING FILE: {file_path}")
+            print(f"ON BRANCH: {branch}")
+            self.project.files.create({
+                "file_path": file_path,
+                "branch": branch,
+                "content": content,
+                "commit_message": commit_message
+            })
+            print("FILE CREATED SUCCESSFULLY")
+            logger.info("file_created_successfully", file=file_path, branch=branch)
+        except Exception as e:
+            print(f"FILE CREATION FAILED: {str(e)}")
+            logger.error("file_creation_failed", file=file_path, branch=branch, error=str(e))
+            raise e
+
     def commit_file(self, branch: str, file_path: str, content: str, commit_message: str) -> None:
         """Commits or updates a file."""
         try:

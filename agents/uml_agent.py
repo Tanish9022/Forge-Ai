@@ -69,7 +69,8 @@ class UMLAgent(BaseAgent):
         logger.info("uml_agent_complete", diagram_count=len(diagram_paths))
         
         return {
-            "uml_diagram_paths": diagram_paths
+            "uml_diagram_paths": diagram_paths,
+            "uml_diagrams_content": diagrams
         }
 
     def _parse_diagrams(self, response: str) -> Dict[str, str]:

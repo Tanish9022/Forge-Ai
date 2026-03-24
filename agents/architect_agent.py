@@ -52,7 +52,8 @@ class ArchitectAgent(BaseAgent):
         logger.info("architect_agent_complete", diagram_count=len(diagram_paths))
         
         return {
-            "diagram_paths": diagram_paths
+            "diagram_paths": diagram_paths,
+            "diagrams_content": diagrams
         }
 
     def _parse_diagrams(self, response: str) -> Dict[str, str]:

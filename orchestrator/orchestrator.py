@@ -213,7 +213,86 @@ class Orchestrator:
         for attempt in range(max_retries + 1):
             try:
                 updated_context = agent.run(context)
+                print("AGENT OUTPUT:", updated_context)
                 self.state_manager.update_context(project_id, issue_iid, updated_context)
+                
+                # Centralized file creation logic based on agent output
+                branch_name = updated_context.get("branch_name") or context.get("branch_name")
+                
+                if branch_name:
+                    # Verify branch exists
+                    try:
+                        self.gitlab.project.branches.get(branch_name)
+                    except:
+                        print(f"Branch {branch_name} not found, creating it.")
+                        self.gitlab.create_branch(branch_name)
+
+                    # 1. PMAgent -> docs/requirements.md
+                    if "requirements_content" in updated_context:
+                        file_path = "docs/requirements.md"
+                        try:
+                            self.gitlab.create_file(
+                                branch=branch_name,
+                                file_path=file_path,
+                                content=updated_context["requirements_content"],
+                                commit_message=f"Add requirements for issue #{issue_iid}"
+                            )
+                        except Exception as e:
+                            if "already exists" in str(e).lower():
+                                self.gitlab.commit_file(branch_name, file_path, updated_context["requirements_content"], f"Update requirements for issue #{issue_iid}")
+                            else:
+                                print("FILE CREATION FAILED:", str(e))
+
+                    # 2. ArchitectAgent -> docs/diagrams/
+                    if "diagrams_content" in updated_context:
+                        for file_name, content in updated_context["diagrams_content"].items():
+                            file_path = f"docs/diagrams/{file_name}"
+                            try:
+                                self.gitlab.create_file(
+                                    branch=branch_name,
+                                    file_path=file_path,
+                                    content=content,
+                                    commit_message=f"Add architecture diagram {file_name}"
+                                )
+                            except Exception as e:
+                                if "already exists" in str(e).lower():
+                                    self.gitlab.commit_file(branch_name, file_path, content, f"Update diagram {file_name}")
+                                else:
+                                    print("FILE CREATION FAILED:", str(e))
+
+                    # 3. UMLAgent -> docs/
+                    if "uml_diagrams_content" in updated_context:
+                        for file_name, content in updated_context["uml_diagrams_content"].items():
+                            file_path = f"docs/{file_name}"
+                            try:
+                                self.gitlab.create_file(
+                                    branch=branch_name,
+                                    file_path=file_path,
+                                    content=content,
+                                    commit_message=f"Add UML diagram {file_name}"
+                                )
+                            except Exception as e:
+                                if "already exists" in str(e).lower():
+                                    self.gitlab.commit_file(branch_name, file_path, content, f"Update UML diagram {file_name}")
+                                else:
+                                    print("FILE CREATION FAILED:", str(e))
+
+                    # 4. DeveloperAgent -> src/
+                    if "code_files_content" in updated_context:
+                        for file_path, content in updated_context["code_files_content"].items():
+                            try:
+                                self.gitlab.create_file(
+                                    branch=branch_name,
+                                    file_path=file_path,
+                                    content=content,
+                                    commit_message=f"Implement {file_path}"
+                                )
+                            except Exception as e:
+                                if "already exists" in str(e).lower():
+                                    self.gitlab.commit_file(branch_name, file_path, content, f"Update {file_path}")
+                                else:
+                                    print("FILE CREATION FAILED:", str(e))
+
                 self.state_manager.set_state(project_id, issue_iid, post_state)
                 print(f"Agent {agent.name} completed successfully")
                 logger.info("agent_end", agent=agent.name, issue_iid=issue_iid)

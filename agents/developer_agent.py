@@ -61,7 +61,8 @@ class DeveloperAgent(BaseAgent):
         
         return {
             "mr_iid": mr_iid,
-            "generated_files": list(files.keys())
+            "generated_files": list(files.keys()),
+            "code_files_content": files
         }
 
     def _parse_files(self, response: str) -> Dict[str, str]:

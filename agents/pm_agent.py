@@ -48,6 +48,7 @@ class PMAgent(BaseAgent):
         logger.info("pm_agent_complete", requirements_path=requirements_path)
         
         return {
+            "requirements_content": requirements_content,
             "requirements_path": requirements_path,
             "branch_name": branch_name,
             "issue_title": title
