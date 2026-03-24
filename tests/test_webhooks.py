@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from main import app
-from config import settings
+from config import settings, GITLAB_WEBHOOK_SECRET
 
 client = TestClient(app)
 
@@ -22,7 +22,7 @@ def test_webhook_valid_issue():
         "project": {"id": 123}
     }
     headers = {
-        "X-Gitlab-Token": settings.GITLAB_WEBHOOK_SECRET,
+        "X-Gitlab-Token": GITLAB_WEBHOOK_SECRET,
         "X-Gitlab-Event": "Issue Hook"
     }
     response = client.post("/webhook", json=payload, headers=headers)

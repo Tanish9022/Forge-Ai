@@ -4,14 +4,14 @@ import structlog
 from google import genai
 from google.genai import types
 from typing import Optional
-from config import settings
+from config import settings, GEMINI_API_KEY
 
 logger = structlog.get_logger()
 
 class LLMClient:
     """Wrapper for Google GenAI SDK with retries and logging."""
     
-    def __init__(self, api_key: str = settings.GOOGLE_API_KEY, model: str = settings.AGENT_MODEL):
+    def __init__(self, api_key: str = GEMINI_API_KEY, model: str = settings.AGENT_MODEL):
         self.client = genai.Client(api_key=api_key)
         self.model = model
 

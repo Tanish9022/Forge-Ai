@@ -8,7 +8,7 @@ from tools.llm_tools import LLMClient
 from orchestrator.orchestrator import Orchestrator
 from orchestrator.state import state_manager
 from webhooks import parser
-from config import settings
+from config import settings, GEMINI_API_KEY, GITLAB_TOKEN, GITLAB_PROJECT_ID, GITLAB_WEBHOOK_SECRET
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -34,10 +34,10 @@ async def lifespan(app: FastAPI):
     
     # Check for critical missing settings
     missing = []
-    if not settings.GOOGLE_API_KEY: missing.append("GOOGLE_API_KEY")
-    if not settings.GITLAB_TOKEN: missing.append("GITLAB_TOKEN")
-    if not settings.GITLAB_PROJECT_ID: missing.append("GITLAB_PROJECT_ID")
-    if not settings.GITLAB_WEBHOOK_SECRET: missing.append("GITLAB_WEBHOOK_SECRET")
+    if not GEMINI_API_KEY: missing.append("GEMINI_API_KEY")
+    if not GITLAB_TOKEN: missing.append("GITLAB_TOKEN")
+    if not GITLAB_PROJECT_ID: missing.append("GITLAB_PROJECT_ID")
+    if not GITLAB_WEBHOOK_SECRET: missing.append("GITLAB_WEBHOOK_SECRET")
     
     if missing:
         logger.warning("missing_environment_variables", missing=missing)
@@ -104,7 +104,7 @@ async def webhook(
     """
     try:
         # 1. Fast security check (constant time)
-        if not x_gitlab_token or not hmac.compare_digest(x_gitlab_token, settings.GITLAB_WEBHOOK_SECRET):
+        if not x_gitlab_token or not hmac.compare_digest(x_gitlab_token, GITLAB_WEBHOOK_SECRET):
             return {"status": "ignored", "reason": "unauthorized"}
 
         # 2. Receive raw body asynchronously (fast)

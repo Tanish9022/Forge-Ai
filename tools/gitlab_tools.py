@@ -1,14 +1,14 @@
 import gitlab
 import structlog
 from typing import Dict, List, Optional
-from config import settings
+from config import settings, GITLAB_URL, GITLAB_TOKEN, GITLAB_PROJECT_ID
 
 logger = structlog.get_logger()
 
 class GitLabTools:
     """Helper class for interacting with the GitLab API."""
     
-    def __init__(self, url: str = settings.GITLAB_URL, token: str = settings.GITLAB_TOKEN, project_id: int = settings.GITLAB_PROJECT_ID):
+    def __init__(self, url: str = GITLAB_URL, token: str = GITLAB_TOKEN, project_id: int = GITLAB_PROJECT_ID):
         # Ensure no trailing slash which can cause 403 redirects
         self.url = url.rstrip('/')
         self.token = token

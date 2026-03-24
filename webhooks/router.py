@@ -1,7 +1,7 @@
 import hmac
 import structlog
 from fastapi import APIRouter, Header, Request, HTTPException, BackgroundTasks
-from config import settings
+from config import settings, GITLAB_WEBHOOK_SECRET
 from webhooks import parser
 from orchestrator.orchestrator import Orchestrator
 from tools.gitlab_tools import GitLabTools
@@ -25,7 +25,7 @@ async def handle_webhook(
     x_gitlab_event: str = Header(None)
 ):
     """Main webhook entry point."""
-    if not x_gitlab_token or not hmac.compare_digest(x_gitlab_token, settings.GITLAB_WEBHOOK_SECRET):
+    if not x_gitlab_token or not hmac.compare_digest(x_gitlab_token, GITLAB_WEBHOOK_SECRET):
         logger.warning("invalid_webhook_token")
         raise HTTPException(status_code=401, detail="Invalid token")
 
