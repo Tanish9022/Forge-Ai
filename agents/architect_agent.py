@@ -32,9 +32,10 @@ class ArchitectAgent(BaseAgent):
         
         diagrams = self._parse_diagrams(llm_response)
         
+        base_path = f"projects/issue-{issue_iid}"
         diagram_paths = []
         for file_name, content in diagrams.items():
-            path = f"docs/diagrams/{file_name}"
+            path = f"{base_path}/docs/diagrams/{file_name}"
             self.gitlab.commit_file(
                 branch=branch_name,
                 file_path=path,

@@ -46,7 +46,8 @@ Description: {description}
             branch_name = f"feature/issue-{issue_iid}"
             self.gitlab.ensure_branch(branch_name)
         
-        requirements_path = "docs/requirements.md"
+        base_path = f"projects/issue-{issue_iid}"
+        requirements_path = f"{base_path}/docs/requirements.md"
         self.gitlab.commit_file(
             branch=branch_name,
             file_path=requirements_path,
@@ -54,7 +55,7 @@ Description: {description}
             commit_message=f"docs: define requirements for issue #{issue_iid}"
         )
         
-        summary = f"I've analyzed issue #{issue_iid} and generated requirements in docs/requirements.md on branch `{branch_name}`."
+        summary = f"I've analyzed issue #{issue_iid} and generated requirements in {requirements_path} on branch `{branch_name}`."
         self.gitlab.post_issue_comment(issue_iid, summary)
         
         logger.info("pm_agent_complete", requirements_path=requirements_path)

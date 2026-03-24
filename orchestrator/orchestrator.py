@@ -231,9 +231,12 @@ class Orchestrator:
                         print(f"Branch {branch_name} not found, creating it.")
                         self.gitlab.create_branch(branch_name)
 
+                    # 0. Base path for isolation
+                    base_path = f"projects/issue-{issue_iid}"
+
                     # 1. PMAgent -> docs/requirements.md
                     if "requirements_content" in updated_context:
-                        file_path = "docs/requirements.md"
+                        file_path = f"{base_path}/docs/requirements.md"
                         try:
                             self.gitlab.create_file(
                                 branch=branch_name,
@@ -246,11 +249,15 @@ class Orchestrator:
                                 self.gitlab.commit_file(branch_name, file_path, updated_context["requirements_content"], f"Update requirements for issue #{issue_iid}")
                             else:
                                 print("FILE CREATION FAILED:", str(e))
+                        
+                        # Update requirements_path in context for downstream agents
+                        self.state_manager.update_context(project_id, issue_iid, {"requirements_path": file_path})
 
                     # 2. ArchitectAgent -> docs/diagrams/
                     if "diagrams_content" in updated_context:
+                        actual_diagram_paths = []
                         for file_name, content in updated_context["diagrams_content"].items():
-                            file_path = f"docs/diagrams/{file_name}"
+                            file_path = f"{base_path}/docs/diagrams/{file_name}"
                             try:
                                 self.gitlab.create_file(
                                     branch=branch_name,
@@ -263,11 +270,15 @@ class Orchestrator:
                                     self.gitlab.commit_file(branch_name, file_path, content, f"Update diagram {file_name}")
                                 else:
                                     print("FILE CREATION FAILED:", str(e))
+                            actual_diagram_paths.append(file_path)
+                        
+                        # Update diagram_paths in context for downstream agents
+                        self.state_manager.update_context(project_id, issue_iid, {"diagram_paths": actual_diagram_paths})
 
                     # 3. UMLAgent -> docs/
                     if "uml_diagrams_content" in updated_context:
                         for file_name, content in updated_context["uml_diagrams_content"].items():
-                            file_path = f"docs/{file_name}"
+                            file_path = f"{base_path}/docs/{file_name}"
                             try:
                                 self.gitlab.create_file(
                                     branch=branch_name,
@@ -283,7 +294,8 @@ class Orchestrator:
 
                     # 4. DeveloperAgent -> src/
                     if "code_files_content" in updated_context:
-                        for file_path, content in updated_context["code_files_content"].items():
+                        for original_path, content in updated_context["code_files_content"].items():
+                            file_path = f"{base_path}/{original_path}"
                             try:
                                 self.gitlab.create_file(
                                     branch=branch_name,

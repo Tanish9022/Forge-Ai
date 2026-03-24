@@ -38,17 +38,21 @@ class DeveloperAgent(BaseAgent):
         
         files = self._parse_files(llm_response)
         
-        for file_path, content in files.items():
+        base_path = f"projects/issue-{issue_iid}"
+        actual_files = []
+        for original_path, content in files.items():
+            file_path = f"{base_path}/{original_path}"
             self.gitlab.commit_file(
                 branch=branch_name,
                 file_path=file_path,
                 content=content,
                 commit_message=f"feat: implement {file_path} for issue #{issue_iid}"
             )
+            actual_files.append(file_path)
             
         mr_title = f"WIP: AI-SDLC #{issue_iid} - {context.get('issue_title', 'Feature implementation')}"
         mr_description = f"Automated implementation for issue #{issue_iid}.\n\nGenerated files:\n"
-        for path in files.keys():
+        for path in actual_files:
             mr_description += f"- {path}\n"
             
         mr_iid = self.gitlab.open_merge_request(
