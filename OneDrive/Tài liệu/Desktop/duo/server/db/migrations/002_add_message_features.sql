@@ -1,0 +1,3 @@
+ALTER TABLE messages
+ADD COLUMN reactions JSONB DEFAULT '{}',
+ADD COLUMN is_deleted BOOLEAN DEFAULT false;

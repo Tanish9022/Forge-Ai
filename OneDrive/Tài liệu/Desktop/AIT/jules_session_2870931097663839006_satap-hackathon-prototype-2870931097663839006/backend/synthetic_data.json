@@ -1,0 +1,27 @@
+[
+  {
+    "id": "RPT-001",
+    "text": "Surveillance drones detected suspicious movement of 3 unidentified individuals near the LOC in the Poonch sector. Thermal signatures suggest they are carrying heavy backpacks. Visibility is low.",
+    "context": "High Threat"
+  },
+  {
+    "id": "RPT-002",
+    "text": "Routine patrol conducted in Grid 45X, Ladakh region. No unusual activity observed. Local shepherd movement verified. Weather conditions clear.",
+    "context": "Normal"
+  },
+  {
+    "id": "RPT-003",
+    "text": "Intercepted radio comms from Sector Alpha indicate potential infiltration attempt scheduled for tonight. Keywords 'crossing' and 'package' heard.",
+    "context": "High Threat"
+  },
+  {
+    "id": "RPT-004",
+    "text": "Supply convoy reached forward post in Uri sector without incident. Road conditions stable.",
+    "context": "Normal"
+  },
+  {
+    "id": "RPT-005",
+    "text": "Significant buildup of troops observed across the border near Galwan Valley. Satellite imagery confirms 5 new temporary structures.",
+    "context": "High Threat"
+  }
+]

@@ -1,0 +1,23 @@
+{
+  "name": "atmos",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:api": "node --watch server/index.js",
+    "start:api": "node server/index.js",
+    "db:migrate": "node server/db/migrate.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.5.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.1.1",
+    "pg": "^8.16.0",
+    "ws": "^8.18.2",
+    "zod": "^3.25.56"
+  }
+}
